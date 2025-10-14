@@ -26,7 +26,7 @@ const { OfflineVideoDownloader } = NativeModules;
 if (!OfflineVideoDownloader) {
   throw new Error(
     "OfflineVideoDownloader native module is not linked properly. " +
-      "Please check your Android linking configuration.",
+      "Please check your Android linking configuration."
   );
 }
 
@@ -47,12 +47,12 @@ export class OfflineDownloader {
    */
   static async getAvailableTracks(
     masterUrl: string,
-    options: DownloadOptions = {},
+    options: DownloadOptions = {}
   ): Promise<AvailableTracksResult> {
     try {
       return await OfflineVideoDownloader.getAvailableTracks(
         masterUrl,
-        options,
+        options
       );
     } catch (error) {
       console.error("Get available tracks failed:", error);
@@ -78,11 +78,11 @@ export class OfflineDownloader {
    *  Check if content can be downloaded based on size
    */
   static async canDownloadContent(
-    estimatedSizeBytes: number,
+    estimatedSizeBytes: number
   ): Promise<DownloadCapabilityCheck> {
     try {
       return await OfflineVideoDownloader.canDownloadContent(
-        estimatedSizeBytes,
+        estimatedSizeBytes
       );
     } catch (error) {
       console.error("Can download content check failed:", error);
@@ -101,7 +101,7 @@ export class OfflineDownloader {
     selectedHeight: number,
     selectedWidth: number = 1920,
     preferDolbyAtmos: boolean = false,
-    options: DownloadOptions = {},
+    options: DownloadOptions = {}
   ): Promise<DownloadResult> {
     try {
       return await OfflineVideoDownloader.downloadStream(
@@ -110,7 +110,7 @@ export class OfflineDownloader {
         selectedHeight,
         selectedWidth,
         preferDolbyAtmos,
-        options,
+        options
       );
     } catch (error) {
       console.error("Download video failed:", error);
@@ -166,7 +166,7 @@ export class OfflineDownloader {
       total: number;
       percentage: number;
       currentDownloadId: string;
-    }) => void,
+    }) => void
   ): Promise<{
     success: boolean;
     deletedCount: number;
@@ -211,7 +211,7 @@ export class OfflineDownloader {
         try {
           await this.cancelDownload(download.downloadId);
           console.log(
-            `✅ Deleted (${current}/${total}): ${download.downloadId}`,
+            `✅ Deleted (${current}/${total}): ${download.downloadId}`
           );
           deletedCount++;
         } catch (error) {
@@ -225,7 +225,7 @@ export class OfflineDownloader {
       }
 
       console.log(
-        `✅ Deletion complete: ${deletedCount} deleted, ${failedCount} failed`,
+        `✅ Deletion complete: ${deletedCount} deleted, ${failedCount} failed`
       );
 
       return {
@@ -283,11 +283,11 @@ export class OfflineDownloader {
    * Get offline playback URI for completed downloads
    */
   static async getOfflinePlaybackUri(
-    downloadId: string,
+    downloadId: string
   ): Promise<string | null> {
     try {
       const result = await OfflineVideoDownloader.getOfflinePlaybackUri(
-        downloadId,
+        downloadId
       );
       return result.uri;
     } catch (error) {
@@ -326,21 +326,21 @@ export class OfflineDownloader {
         // iOS: Triggers restorePendingDownloads() + resumePartialDownloads() + checkForOrphanedDownloads()
         const result = await OfflineVideoDownloader.syncDownloadProgress();
         console.log(
-          `✅ iOS sync complete: ${result.totalDownloads} total, ${result.restoredDownloads} restored`,
+          `✅ iOS sync complete: ${result.totalDownloads} total, ${result.restoredDownloads} restored`
         );
         return result;
       } else {
         // Android: ExoPlayer auto-restores everything, just get current state
         const allDownloads = await this.getAllDownloads();
         const activeDownloads = allDownloads.filter(
-          d => d.state === "downloading" || d.state === "queued",
+          (d) => d.state === "downloading" || d.state === "queued"
         );
         const completedDownloads = allDownloads.filter(
-          d => d.state === "completed",
+          (d) => d.state === "completed"
         );
 
         console.log(
-          `✅ Android state: ${allDownloads.length} total (ExoPlayer auto-restored)`,
+          `✅ Android state: ${allDownloads.length} total (ExoPlayer auto-restored)`
         );
 
         return {
@@ -363,11 +363,11 @@ export class OfflineDownloader {
    * ❌ Android: Not needed (ExoPlayer auto-resumes all downloads)
    */
   static async restartIncompleteDownload(
-    downloadId: string,
+    downloadId: string
   ): Promise<RestartResult> {
     if (Platform.OS !== "ios") {
       console.log(
-        `ℹ️ restartIncompleteDownload() not needed on Android (ExoPlayer auto-resumes)`,
+        `ℹ️ restartIncompleteDownload() not needed on Android (ExoPlayer auto-resumes)`
       );
       return {
         success: false,
@@ -380,7 +380,7 @@ export class OfflineDownloader {
     try {
       console.log(`🔄 Restarting incomplete download: ${downloadId}`);
       const result = await OfflineVideoDownloader.restartIncompleteDownload(
-        downloadId,
+        downloadId
       );
       console.log(`✅ Restart result: ${result.message}`);
       return result;
@@ -401,8 +401,8 @@ export class OfflineDownloader {
       if (Platform.OS === "ios") {
         // iOS: Filter for stopped/failed downloads that need manual restart
         return allDownloads.filter(
-          download =>
-            download.state === "stopped" || download.state === "failed",
+          (download) =>
+            download.state === "stopped" || download.state === "failed"
         );
       } else {
         // Android: ExoPlayer auto-resumes, no incomplete concept
@@ -489,7 +489,7 @@ export class OfflineDownloader {
       }
 
       console.log(
-        `🔄 Auto-restarting ${incomplete.length} incomplete downloads...`,
+        `🔄 Auto-restarting ${incomplete.length} incomplete downloads...`
       );
 
       const results: RestartResult[] = [];
@@ -499,7 +499,7 @@ export class OfflineDownloader {
       for (const download of incomplete) {
         try {
           const result = await this.restartIncompleteDownload(
-            download.downloadId,
+            download.downloadId
           );
           results.push(result);
 
@@ -520,7 +520,7 @@ export class OfflineDownloader {
       }
 
       console.log(
-        `✅ Auto-restart complete: ${succeeded} succeeded, ${failed} failed`,
+        `✅ Auto-restart complete: ${succeeded} succeeded, ${failed} failed`
       );
 
       return {
@@ -543,7 +543,7 @@ export class OfflineDownloader {
    * @returns Promise with the result
    */
   static async setPlaybackMode(
-    mode: PlaybackMode,
+    mode: PlaybackMode
   ): Promise<PlaybackModeResult> {
     try {
       const result = await OfflineVideoDownloader.setPlaybackMode(mode);
@@ -592,7 +592,7 @@ export class OfflineDownloader {
    */
   static onDownloadProgress(
     downloadId: string,
-    callback: (progress: DownloadProgressEvent) => void,
+    callback: (progress: DownloadProgressEvent) => void
   ): () => void {
     const listener = eventEmitter.addListener(
       "DownloadProgress",
@@ -600,7 +600,7 @@ export class OfflineDownloader {
         if (event.downloadId === downloadId) {
           callback(event);
         }
-      },
+      }
     );
 
     this.progressListeners.set(downloadId, listener);
@@ -615,14 +615,14 @@ export class OfflineDownloader {
    * Listen for all download events globally
    */
   static onAllDownloadEvents(
-    callback: (event: DownloadProgressEvent) => void,
+    callback: (event: DownloadProgressEvent) => void
   ): () => void {
     const listener = eventEmitter.addListener("DownloadProgress", callback);
     this.globalListeners.push(listener);
 
     return () => {
       listener.remove();
-      this.globalListeners = this.globalListeners.filter(l => l !== listener);
+      this.globalListeners = this.globalListeners.filter((l) => l !== listener);
     };
   }
 
@@ -638,10 +638,10 @@ export class OfflineDownloader {
    * Remove all listeners
    */
   static removeAllListeners(): void {
-    this.progressListeners.forEach(listener => listener.remove());
+    this.progressListeners.forEach((listener) => listener.remove());
     this.progressListeners.clear();
 
-    this.globalListeners.forEach(listener => listener.remove());
+    this.globalListeners.forEach((listener) => listener.remove());
     this.globalListeners.length = 0;
   }
 
@@ -671,3 +671,4 @@ export class OfflineDownloader {
 }
 
 export default OfflineDownloader;
+export { eventEmitter };
