@@ -4,4 +4,3 @@ export {
   OfflineDownloader,
   eventEmitter,
 } from "./src/OfflineVideoDownloader";
-export * from "./src/types";
