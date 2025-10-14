@@ -1,0 +1,61 @@
+{
+  "name": "react-native-offline-video-downloader",
+  "version": "1.0.0",
+  "description": "A comprehensive offline video download utility for React Native applications, providing seamless HLS video downloading and offline playback capabilities using native ExoPlayer for Android and AVPlayer for iOS platforms.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "typings": "index.d.ts",
+  "homepage": "https://github.com/MdAbubakar/react-native-offline-video-downloader",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MdAbubakar/react-native-offline-video-downloader.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MdAbubakar/react-native-offline-video-downloader/issues"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "src/",
+    "types/",
+    "android/",
+    "ios",
+    "*.podspec",
+    "!lib/typescript/example",
+    "!ios/build",
+    "!android/build",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*"
+  ],
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "react-native",
+    "offline",
+    "video",
+    "download",
+    "exoplayer",
+    "avplayer",
+    "hls",
+    "streaming",
+    "ios",
+    "android"
+  ],
+  "author": {
+    "name": "Md Abubakar",
+    "email": "your.email@example.com"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-native": "^0.72.0",
+    "typescript": "^5.0.0"
+  }
+}
