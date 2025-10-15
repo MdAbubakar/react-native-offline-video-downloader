@@ -12,24 +12,20 @@ object OfflineVideoRegistry {
     private const val TAG = "OfflineVideoRegistry"
     private var appContext: Context? = null
 
-    // FIXED: Thread-safe collection for registered players
     private val registeredPlayers = ConcurrentHashMap.newKeySet<ExoPlayer>()
     private var isInitialized = false
 
     fun setAppContext(context: Context) {
         appContext = context.applicationContext
         isInitialized = true
-        Log.d(TAG, "Registry initialized with app context")
     }
 
     fun registerPlayer(player: ExoPlayer) {
         registeredPlayers.add(player)
-        Log.d(TAG, "Registered ExoPlayer instance. Total players: ${registeredPlayers.size}")
     }
 
     fun unregisterPlayer(player: ExoPlayer) {
         registeredPlayers.remove(player)
-        Log.d(TAG, "Unregistered ExoPlayer instance. Total players: ${registeredPlayers.size}")
     }
 
     fun getAppContext(): Context? = appContext
@@ -44,7 +40,6 @@ object OfflineVideoRegistry {
         }
     }
 
-    // FIXED: Added cleanup method
     fun cleanup() {
         registeredPlayers.clear()
         appContext = null

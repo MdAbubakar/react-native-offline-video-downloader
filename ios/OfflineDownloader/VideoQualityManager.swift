@@ -12,12 +12,10 @@ class VideoQualityManager {
             let height = Int(videoAttributes.presentationSize.height)
             let width = Int(videoAttributes.presentationSize.width)
             
-            // FIXED: Safe unwrapping instead of force unwrap
             let peakBitRate = variant.peakBitRate ?? 0
             let averageBitRate = variant.averageBitRate ?? 0
             let bitrate = Int(averageBitRate > 0 ? averageBitRate : peakBitRate)
             
-            // Skip if no valid bitrate
             guard bitrate > 0 else { continue }
             
             let quality: [String: Any] = [
@@ -42,7 +40,6 @@ class VideoQualityManager {
         }
     }
     
-    // ADDED: Helper function to convert CMVideoCodecType to readable string
     private func codecTypeToString(_ codecType: CMVideoCodecType) -> String {
         switch codecType {
         case kCMVideoCodecType_H264:
@@ -54,7 +51,6 @@ class VideoQualityManager {
         case kCMVideoCodecType_AV1:
             return "AV1"
         default:
-            // Convert UInt32 to FourCC string
             let chars = [
                 Character(UnicodeScalar((codecType >> 24) & 0xFF)!),
                 Character(UnicodeScalar((codecType >> 16) & 0xFF)!),

@@ -30,21 +30,16 @@ class VideoDownloadService : DownloadService(
         private const val CHANNEL_ID = "VideoDownloadChannel"
     }
 
-    // ✅ Service state tracking
     private var isServiceRunning = false
     private var isInitialized = false
 
-    // ✅ Lifecycle tracking
     private var initializationAttempts = 0
     private val maxInitializationAttempts = 10
     private var isDestroyed = false
 
     override fun onCreate() {
-        Log.d(TAG, "🚀 VideoDownloadService onCreate called")
 
-        // ✅ Prevent multiple initialization
         if (isServiceRunning) {
-            Log.w(TAG, "Service already running, ignoring onCreate")
             return
         }
 
@@ -55,7 +50,6 @@ class VideoDownloadService : DownloadService(
         // Create notification channel first
         createNotificationChannel()
 
-        // ✅ CRITICAL: Check if app is ready
         if (!isAppReady()) {
             Log.w(TAG, "App not ready, deferring service start")
             startForeground(FOREGROUND_NOTIFICATION_ID, createWaitingNotification())
@@ -68,69 +62,54 @@ class VideoDownloadService : DownloadService(
             startForeground(FOREGROUND_NOTIFICATION_ID, createInitializingNotification())
             super.onCreate()
             isInitialized = true
-            Log.d(TAG, "✅ VideoDownloadService created successfully")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error creating VideoDownloadService: ${e.message}")
             handleServiceStartFailure(e)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "📥 onStartCommand: ${intent?.action}")
-
         if (!isInitialized) {
-            Log.w(TAG, "Service not initialized, deferring command")
             return START_NOT_STICKY
         }
 
         return try {
             super.onStartCommand(intent, flags, startId)
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error in onStartCommand: ${e.message}")
             START_NOT_STICKY
         }
     }
 
-    // ✅ NEW: Check if app and modules are ready
     private fun isAppReady(): Boolean {
         return try {
             // Check if Registry is initialized
             if (!OfflineVideoRegistry.isInitialized()) {
-                Log.d(TAG, "OfflineVideoRegistry not ready")
                 return false
             }
 
             // Check if DownloadManager exists
             val downloadManager = OfflineVideoDownloaderModule.getDownloadManager()
             if (downloadManager == null) {
-                Log.d(TAG, "DownloadManager not ready")
                 return false
             }
 
-            Log.d(TAG, "✅ App is ready for service start")
             true
         } catch (e: Exception) {
-            Log.d(TAG, "App readiness check failed: ${e.message}")
             false
         }
     }
 
-    // ✅ NEW: Defer service start until app is ready
     private fun deferServiceStart() {
         val handler = Handler(Looper.getMainLooper())
 
         val checkRunnable = object : Runnable {
             override fun run() {
                 if (isDestroyed) {
-                    Log.d(TAG, "Service destroyed during deferred start")
                     return
                 }
 
                 initializationAttempts++
-                Log.d(TAG, "🔄 Initialization attempt $initializationAttempts/$maxInitializationAttempts")
 
                 if (isAppReady()) {
-                    Log.d(TAG, "✅ App ready after $initializationAttempts attempts, starting service")
                     try {
                         // Update notification
                         val notification = NotificationCompat.Builder(this@VideoDownloadService, CHANNEL_ID)
@@ -147,15 +126,11 @@ class VideoDownloadService : DownloadService(
                         // Initialize parent service
                         super@VideoDownloadService.onCreate()
                         isInitialized = true
-                        Log.d(TAG, "✅ Deferred service start successful")
 
                     } catch (e: Exception) {
-                        Log.e(TAG, "❌ Deferred service start failed: ${e.message}")
                         handleServiceStartFailure(e)
                     }
                 } else if (initializationAttempts < maxInitializationAttempts) {
-                    Log.d(TAG, "⏳ App not ready, retrying in 1s (attempt $initializationAttempts/$maxInitializationAttempts)")
-
                     // Update waiting notification
                     val waitingNotification = NotificationCompat.Builder(this@VideoDownloadService, CHANNEL_ID)
                         .setContentTitle("Video Downloader")
@@ -169,7 +144,6 @@ class VideoDownloadService : DownloadService(
                     startForeground(FOREGROUND_NOTIFICATION_ID, waitingNotification)
                     handler.postDelayed(this, 1000)
                 } else {
-                    Log.e(TAG, "❌ App not ready after $maxInitializationAttempts attempts, stopping service")
                     stopSelf()
                 }
             }
@@ -178,11 +152,8 @@ class VideoDownloadService : DownloadService(
         handler.postDelayed(checkRunnable, 1000)
     }
 
-    // ✅ NEW: Handle service start failures gracefully
     private fun handleServiceStartFailure(exception: Exception) {
         try {
-            Log.e(TAG, "🔥 Service start failed: ${exception.message}")
-
             // Show error notification
             val errorNotification = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("Video Downloader Error")
@@ -194,7 +165,6 @@ class VideoDownloadService : DownloadService(
 
             startForeground(FOREGROUND_NOTIFICATION_ID, errorNotification)
 
-            // Stop service after showing error
             Handler(Looper.getMainLooper()).postDelayed({
                 stopSelf()
             }, 3000)
@@ -209,16 +179,13 @@ class VideoDownloadService : DownloadService(
         return try {
             val downloadManager = OfflineVideoDownloaderModule.getDownloadManager()
                 ?: throw IllegalStateException("DownloadManager not initialized")
-            Log.d(TAG, "✅ Retrieved DownloadManager successfully")
             downloadManager
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error getting DownloadManager: ${e.message}")
             throw e
         }
     }
 
     override fun getScheduler(): Scheduler? {
-        // No scheduler needed for basic functionality
         return null
     }
 
@@ -227,7 +194,6 @@ class VideoDownloadService : DownloadService(
         notMetRequirements: Int
     ): Notification {
         return try {
-            Log.d(TAG, "📋 Creating notification for ${downloads.size} downloads")
 
             if (downloads.isEmpty()) {
                 createIdleNotification()
@@ -243,12 +209,10 @@ class VideoDownloadService : DownloadService(
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error creating notification: ${e.message}")
             createErrorNotification()
         }
     }
 
-    // ✅ Notification creation methods
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -265,7 +229,6 @@ class VideoDownloadService : DownloadService(
 
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
-            Log.d(TAG, "📱 Notification channel created")
         }
     }
 
@@ -354,11 +317,7 @@ class VideoDownloadService : DownloadService(
             .build()
     }
 
-    // ✅ CRITICAL FIX: Don't kill service when task is removed
     override fun onTaskRemoved(rootIntent: Intent) {
-        Log.d(TAG, "📱 Task removed - keeping service alive for background downloads")
-
-        // ✅ DON'T call stopSelf() - let downloads continue
         // Show notification that downloads are continuing
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Downloads continuing")
@@ -369,22 +328,17 @@ class VideoDownloadService : DownloadService(
             .build()
 
         startForeground(FOREGROUND_NOTIFICATION_ID, notification)
-
-        // ✅ IMPORTANT: Don't call super.onTaskRemoved() or stopSelf()
-        // This allows the service to continue running
     }
 
     override fun onDestroy() {
-        Log.d(TAG, "🔄 VideoDownloadService onDestroy called")
         isDestroyed = true
         isServiceRunning = false
         isInitialized = false
 
         try {
             super.onDestroy()
-            Log.d(TAG, "✅ VideoDownloadService destroyed successfully")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error destroying service: ${e.message}")
+            Log.e(TAG, "Error destroying service: ${e.message}")
         }
     }
 }

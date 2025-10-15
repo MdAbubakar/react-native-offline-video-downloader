@@ -37,15 +37,8 @@ class OfflineDataSourceProvider(private val context: Context) {
         }
     }
 
-    /**
-     * ✅ FIXED: Cache-aware DataSource factory
-     */
     fun createCacheAwareDataSourceFactory(headers: Map<String, String>? = null): DataSource.Factory {
         val cache = VideoCache.getInstance(context)
-
-        Log.d(TAG, "🎯 Creating cache-aware DataSource factory")
-        Log.d(TAG, "🎯 Cache instance: ${cache.hashCode()}")
-        Log.d(TAG, "🎯 Cache size: ${formatBytes(cache.cacheSpace)}")
 
         // Create HTTP data source factory
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
@@ -54,34 +47,24 @@ class OfflineDataSourceProvider(private val context: Context) {
             .setReadTimeoutMs(30000)
             .setUserAgent("ExoPlayer-OfflineDownloader")
 
-        // Apply headers if provided
         headers?.let {
-            Log.d(TAG, "📋 Applying ${it.size} custom headers")
             httpDataSourceFactory.setDefaultRequestProperties(it.toMutableMap())
         }
 
         // Create default data source factory
         val upstreamFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
 
-        // ✅ FIXED: Allow cache writes and proper cache handling
         return CacheDataSource.Factory()
             .setCache(cache)
             .setUpstreamDataSourceFactory(upstreamFactory)
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR) // ✅ Removed read-only restriction
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
     }
 
-    /**
-     * ✅ FIXED: Proper cache detection for HLS downloads
-     */
     fun isContentCached(uri: String): Boolean {
         var downloadsCursor: DownloadCursor? = null
         return try {
-            Log.d(TAG, "🔍 Checking if content is cached: $uri")
-
-            // ✅ Check download manager for completed downloads
             val downloadManager = OfflineVideoDownloaderModule.getDownloadManager()
             if (downloadManager == null) {
-                Log.d(TAG, "❌ Download manager is null")
                 return false
             }
 
@@ -104,22 +87,15 @@ class OfflineDataSourceProvider(private val context: Context) {
                         if (download.state == Download.STATE_COMPLETED) {
                             val downloadUri = download.request.uri.toString()
 
-                            Log.d(TAG, "🔍 Comparing:")
-                            Log.d(TAG, "📥 Download URI: $downloadUri")
-                            Log.d(TAG, "🎬 Playback URI: $uri")
-
-                            // ✅ Direct match or content ID match
                             if (downloadUri == uri || extractContentId(downloadUri) == extractContentId(
                                     uri
                                 )
                             ) {
-                                Log.d(TAG, "✅ CACHE HIT! Content is downloaded")
                                 foundMatch = true
                                 break
                             }
                         }
                     } catch (e: Exception) {
-                        Log.w(TAG, "Error processing download $checkedCount: ${e.message}")
                         continue
                     }
                 }
@@ -128,10 +104,8 @@ class OfflineDataSourceProvider(private val context: Context) {
             }
             foundMatch
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error checking cache for $uri: ${e.message}")
             false
         }  finally {
-            // ✅ CRITICAL: Safe cursor cleanup
             try {
                 downloadsCursor?.close()
             } catch (e: Exception) {
@@ -140,26 +114,17 @@ class OfflineDataSourceProvider(private val context: Context) {
         }
     }
 
-    /**
-     * ✅ Helper method for content ID extraction
-     */
     private fun extractContentId(url: String): String {
         return try {
-            // For your URLs like: etvwin-s3.akamaized.net/6782084dc7036a0cfa096af2/HD_playlist.m3u8
             val regex = Regex("([a-f0-9]{24})")
             val match = regex.find(url)
             val contentId = match?.value ?: ""
-            Log.d(TAG, "🔍 Extracted content ID '$contentId' from: $url")
             contentId
         } catch (e: Exception) {
-            Log.w(TAG, "Could not extract content ID from: $url")
             ""
         }
     }
 
-    /**
-     * ✅ Helper to format bytes
-     */
     @SuppressLint("DefaultLocale")
     private fun formatBytes(bytes: Long): String {
         if (bytes < 1024) return "$bytes B"
@@ -169,9 +134,6 @@ class OfflineDataSourceProvider(private val context: Context) {
         return String.format("%.1f %s", bytes / k.toDouble().pow(i.toDouble()), sizes[i])
     }
 
-    /**
-     * Get cache statistics for debugging
-     */
     fun getCacheStats(): Map<String, Any> {
         return try {
             val cache = VideoCache.getInstance(context)

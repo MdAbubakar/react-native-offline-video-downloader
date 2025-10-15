@@ -4,21 +4,19 @@ class OfflineVideoRegistry {
     
     private let userDefaults = UserDefaults.standard
     private let registryKey = "OfflineVideoRegistry"
-    private let registryQueue = DispatchQueue(label: "com.etv.offlineregistry", attributes: .concurrent)
+    private let registryQueue = DispatchQueue(label: "com.offlinevideodownloader.registry", attributes: .concurrent)
        
     static var shared: OfflineVideoRegistry?
     
     init() {
-        print("📁 OfflineVideoRegistry initialized")
         createDownloadsDirectoryIfNeeded()
     }
         
     static func setShared(_ instance: OfflineVideoRegistry) {
         shared = instance
-        print("📁 OfflineVideoRegistry set as shared instance")
     }
     
-    // MARK: - Public Methods (All Thread-Safe)
+    // MARK: - Public Methods
     
     func registerDownload(downloadId: String, localUrl: URL, completion: @escaping (Bool) -> Void) {
         registryQueue.async(flags: .barrier) {
@@ -34,8 +32,7 @@ class OfflineVideoRegistry {
             ]
                 
             self.saveRegistryUnsafe(registry)
-            print("✅ Registered download: \(downloadId) (\(self.formatBytes(actualFileSize)))")
-                
+
             DispatchQueue.main.async {
                 completion(true)
             }
@@ -51,21 +48,15 @@ class OfflineVideoRegistry {
                 return
             }
             
-            // ⭐ Simplified file removal
             if FileManager.default.fileExists(atPath: localUrl.path) {
                 do {
                     try FileManager.default.removeItem(at: localUrl)
-                    print("🗑️ Removed file: \(downloadId)")
                 } catch {
-                    print("⚠️ Failed to remove file (continuing): \(error)")
-                    // Don't fail - still remove from registry
+                    print("Failed to remove file (continuing): \(error)")
                 }
-            } else {
-                print("ℹ️ File already missing: \(downloadId)")
             }
             
             self.removeFromRegistryUnsafe(downloadId: downloadId)
-            print("🗑️ Removed from registry: \(downloadId)")
             
             DispatchQueue.main.async {
                 completion(true, nil)
@@ -181,8 +172,6 @@ class OfflineVideoRegistry {
         var cleanedCount = 0
         
         registryQueue.sync(flags: .barrier) {
-            print("🧹 Starting MANUAL cleanup of missing files...")
-            
             let registry = self.getRegistryUnsafe()
             var updatedRegistry = registry
             
@@ -191,7 +180,6 @@ class OfflineVideoRegistry {
                    let url = URL(string: urlString) {
                     
                     if !FileManager.default.fileExists(atPath: url.path) {
-                        print("🗑️ MANUALLY removing missing file: \(downloadId)")
                         updatedRegistry.removeValue(forKey: downloadId)
                         cleanedCount += 1
                     }
@@ -201,8 +189,6 @@ class OfflineVideoRegistry {
             if cleanedCount > 0 {
                 self.saveRegistryUnsafe(updatedRegistry)
             }
-            
-            print("✅ Manual cleanup complete: removed \(cleanedCount) entries")
         }
         
         return cleanedCount
@@ -212,8 +198,6 @@ class OfflineVideoRegistry {
         var restoredCount = 0
         
         registryQueue.sync(flags: .barrier) {
-            print("🔍 Scanning for orphaned .movpkg files...")
-            
             let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             let libraryPath = documentsPath.deletingLastPathComponent().appendingPathComponent("Library")
             
@@ -227,8 +211,6 @@ class OfflineVideoRegistry {
                 var registry = self.getRegistryUnsafe()
                 
                 for item in libraryContents where item.lastPathComponent.hasPrefix("com.apple.UserManagedAssets.") {
-                    print("📁 Found UserManagedAssets directory: \(item.lastPathComponent)")
-                    
                     let assetContents = try FileManager.default.contentsOfDirectory(
                         at: item,
                         includingPropertiesForKeys: nil,
@@ -239,8 +221,6 @@ class OfflineVideoRegistry {
                         if let downloadId = self.extractDownloadIdFromFilename(assetItem.lastPathComponent),
                            registry[downloadId] == nil {
                             
-                            print("🔄 Restoring missing registry entry: \(downloadId)")
-                            
                             let fileSize = self.getFileSize(at: assetItem)
                             registry[downloadId] = [
                                 "localUrl": assetItem.absoluteString,
@@ -250,7 +230,6 @@ class OfflineVideoRegistry {
                             ]
                             
                             restoredCount += 1
-                            print("✅ Restored download: \(downloadId) (\(self.formatBytes(fileSize)))")
                         }
                     }
                 }
@@ -260,16 +239,12 @@ class OfflineVideoRegistry {
                 }
                 
             } catch {
-                print("❌ Error scanning for missing downloads: \(error)")
+                print("Error scanning for missing downloads: \(error)")
             }
-            
-            print("🔄 Restored \(restoredCount) missing download entries")
         }
         
         return restoredCount
     }
-    
-    // MARK: - Private Unsafe Methods (Must be called within queue)
     
     private func getLocalUrlUnsafe(for urlString: String) -> URL? {
         let contentId = extractContentId(from: urlString)
@@ -308,7 +283,6 @@ class OfflineVideoRegistry {
     
     private func saveRegistryUnsafe(_ registry: [String: [String: Any]]) {
         userDefaults.set(registry, forKey: registryKey)
-        // synchronize() is automatic - removed deprecated call
     }
     
     private func removeFromRegistryUnsafe(downloadId: String) {
@@ -317,7 +291,7 @@ class OfflineVideoRegistry {
         saveRegistryUnsafe(registry)
     }
     
-    // MARK: - Helper Methods (Thread-safe as they don't access registry)
+    // MARK: - Helper Methods
     
     func getFileSize(at url: URL) -> Int64 {
         do {
@@ -333,7 +307,6 @@ class OfflineVideoRegistry {
                 return attributes[.size] as? Int64 ?? 0
             }
         } catch {
-            print("⚠️ Failed to get file size for \(url): \(error)")
             return 0
         }
     }
@@ -396,9 +369,8 @@ class OfflineVideoRegistry {
         if !FileManager.default.fileExists(atPath: downloadsPath.path) {
             do {
                 try FileManager.default.createDirectory(at: downloadsPath, withIntermediateDirectories: true, attributes: nil)
-                print("📁 Created downloads directory: \(downloadsPath.path)")
             } catch {
-                print("❌ Failed to create downloads directory: \(error)")
+                print("Failed to create downloads directory: \(error)")
             }
         }
     }

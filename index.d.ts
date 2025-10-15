@@ -1,7 +1,4 @@
-// index.d.ts
 declare module "react-native-offline-video-downloader" {
-  import { EmitterSubscription } from "react-native";
-
   export interface VideoTrack {
     height: number;
     width: number;
@@ -82,7 +79,6 @@ declare module "react-native-offline-video-downloader" {
     description: string;
     behavior: string;
   }
-  // ✅ NEW: Storage management types
   export interface StorageInfo {
     currentCacheSizeMB: number;
     availableSpaceMB: number;
@@ -134,7 +130,7 @@ declare module "react-native-offline-video-downloader" {
       selectedHeight: number,
       selectedWidth?: number,
       preferDolbyAtmos?: boolean,
-      options?: DownloadOptions,
+      options?: DownloadOptions
     ) => Promise<void>;
     pauseDownload: () => Promise<void>;
     resumeDownload: () => Promise<void>;
@@ -148,12 +144,12 @@ declare module "react-native-offline-video-downloader" {
     // Track information
     static getAvailableTracks(
       masterUrl: string,
-      options?: DownloadOptions,
+      options?: DownloadOptions
     ): Promise<AvailableTracksResult>;
     // Storage management
     static checkStorageSpace(): Promise<StorageInfo>;
     static canDownloadContent(
-      estimatedSizeBytes: number,
+      estimatedSizeBytes: number
     ): Promise<DownloadCapabilityCheck>;
 
     // Download management
@@ -163,7 +159,7 @@ declare module "react-native-offline-video-downloader" {
       selectedHeight: number,
       selectedWidth?: number,
       preferDolbyAtmos?: boolean,
-      options?: DownloadOptions,
+      options?: DownloadOptions
     ): Promise<{
       downloadId: string;
       state: string;
@@ -180,7 +176,7 @@ declare module "react-native-offline-video-downloader" {
         total: number;
         percentage: number;
         currentDownloadId: string;
-      }) => void,
+      }) => void
     ): Promise<{
       success: boolean;
       deletedCount: number;
@@ -190,7 +186,7 @@ declare module "react-native-offline-video-downloader" {
     }>;
     static syncDownloadProgress(): Promise<SyncProgressResult>;
     static restartIncompleteDownload(
-      downloadId: string,
+      downloadId: string
     ): Promise<RestartResult>;
     static getIncompleteDownloads(): Promise<any[]>;
     static restoreDownloads(): Promise<{
@@ -220,10 +216,10 @@ declare module "react-native-offline-video-downloader" {
     // Event listeners
     static onDownloadProgress(
       downloadId: string,
-      callback: (progress: DownloadProgressEvent) => void,
+      callback: (progress: DownloadProgressEvent) => void
     ): () => void;
     static onAllDownloadEvents(
-      callback: (progress: DownloadProgressEvent) => void,
+      callback: (progress: DownloadProgressEvent) => void
     ): () => void;
     static removeListenersForDownload(downloadId: string): void;
     static removeAllListeners(): void;

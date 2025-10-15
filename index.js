@@ -1,4 +1,3 @@
-// index.js
 export {
   default,
   OfflineDownloader,

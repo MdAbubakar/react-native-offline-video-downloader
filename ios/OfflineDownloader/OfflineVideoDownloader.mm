@@ -53,7 +53,6 @@ RCT_EXTERN_METHOD(testOfflinePlayback:(NSString *)playbackUrl
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-// ADDED: Missing method declarations that you added to Swift file
 RCT_EXTERN_METHOD(getOfflinePlaybackUri:(NSString *)downloadId
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
@@ -77,7 +76,6 @@ RCT_EXTERN_METHOD(isDownloadCached:(NSString *)downloadId
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-// ADDED: Playback mode methods (delegate to OfflineVideoPlugin)
 RCT_EXTERN_METHOD(setPlaybackMode:(NSString *)mode
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

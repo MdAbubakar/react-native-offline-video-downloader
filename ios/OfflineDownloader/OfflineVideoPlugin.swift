@@ -40,7 +40,6 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
         playbackMode = newMode
         
         getInstance().contentDownloadCache.removeAll()
-        print("🎯 Playback mode changed: \(oldMode.description) → \(newMode.description)")
     }
     
     @objc static func getPlaybackMode() -> Int {
@@ -59,16 +58,13 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
         super.init()
         OfflineVideoPlugin.instance = self
         ReactNativeVideoManager.shared.registerPlugin(plugin: self)
-        print("✅ OfflineVideoPlugin registered successfully with ReactNativeVideoManager")
     }
        
     deinit {
         cleanupObservers()
         ReactNativeVideoManager.shared.unregisterPlugin(plugin: self)
-        print("🗑️ OfflineVideoPlugin deinitialized")
     }
 
-    // MARK: - JS-exposed methods
     @objc func isContentDownloaded(_ uri: String) -> Bool {
         return isContentDownloadedInternal(uri)
     }
@@ -86,12 +82,8 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
         guard let urlAsset = asset as? AVURLAsset else { return nil }
         let uri = urlAsset.url.absoluteString
 
-        print("🔍 Checking DataSource override for: \(uri)")
-        print("🎯 Playback mode: \(OfflineVideoPlugin.playbackMode.description)")
-
         switch OfflineVideoPlugin.playbackMode {
         case .online:
-            print("🌐 ONLINE mode - using default DataSource for: \(uri)")
             return nil
             
         case .offline:
@@ -99,17 +91,12 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
             let isCached = isContentCached(uri)
             let checkDuration = Date().timeIntervalSince1970 - startTime
                     
-            print("⚡ Cache check took \(Int(checkDuration * 1000))ms")
             if isCached {
-                print("📱 OFFLINE mode - using cached DataSource for: \(uri)")
-                
                 if let localURL = OfflineVideoRegistry.shared?.getLocalUrl(for: uri) {
                     let offlineAsset = AVURLAsset(url: localURL)
                                 
                     return OverridePlayerAssetResult(type: .full, asset: offlineAsset)
                 }
-            } else {
-                print("⚠️ OFFLINE mode - content not cached, using default: \(uri)")
             }
             return nil
         }
@@ -118,18 +105,13 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
     // MARK: - Cache Management
     
     func removeDownloadFromCache(_ downloadId: String) {
-        print("🧹 Removing \(downloadId) from plugin cache")
-        
         let keysToRemove = contentDownloadCache.keys.filter { uri in
             isUriRelatedToDownload(uri: uri, downloadId: downloadId)
         }
         
         keysToRemove.forEach { key in
             contentDownloadCache.removeValue(forKey: key)
-            print("🗑️ Removed plugin cache key: \(key)")
         }
-        
-        print("✅ Removed \(keysToRemove.count) plugin cache entries for: \(downloadId)")
     }
     
     func isContentDownloadedInternal(_ uri: String) -> Bool {
@@ -147,9 +129,7 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
         let startTime = Date().timeIntervalSince1970
         let isDownloaded = OfflineVideoRegistry.shared?.isContentCached(url: uri) ?? false
         let duration = Date().timeIntervalSince1970 - startTime
-            
-        print("⚡ Fast registry check took \(Int(duration * 1000))ms for: \(uri)")
-            
+
         contentDownloadCache[uri] = isDownloaded
         cacheHitCount[uri] = 1
             
@@ -164,8 +144,6 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
         
         contentDownloadCache = contentDownloadCache.filter { keysToKeep.contains($0.key) }
         cacheHitCount = cacheHitCount.filter { keysToKeep.contains($0.key) }
-        
-        print("🧹 Intelligently cleaned cache: kept \(contentDownloadCache.count) items")
     }
     
     private func isContentCached(_ uri: String) -> Bool {
@@ -183,8 +161,6 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
         let isCached = registry.isContentCached(url: uri)
         
         let duration = Date().timeIntervalSince1970 - startTime
-        print("💾 Fast cache check took \(Int(duration * 1000))ms for: \(uri)")
-        
         contentDownloadCache[uri] = isCached
         return isCached
     }
@@ -207,9 +183,6 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
         
         if let match = regex?.firstMatch(in: identifier, options: [], range: range) {
             let contentId = String(identifier[Range(match.range, in: identifier)!])
-            if !contentId.isEmpty {
-                print("🔍 Extracted content ID '\(contentId)' from: \(identifier)")
-            }
             return contentId
         }
         
@@ -218,12 +191,10 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
 
     // MARK: - Player lifecycle callbacks
     override func onInstanceCreated(id: String, player: AVPlayer) {
-        print("📱 AVPlayer instance created: \(id)")
         setupObservers(for: player)
     }
 
     override func onInstanceRemoved(id: String, player: AVPlayer) {
-        print("📱 AVPlayer instance removed: \(id)")
         cleanupObservers()
     }
     
@@ -253,7 +224,6 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
     
     private func handlePlaybackRateChange(player: AVPlayer, change: NSKeyValueObservedChange<Float>) {
         if OfflineVideoPlugin.playbackMode == .offline && player.rate > 0 {
-            print("📱 Offline content started playing")
         }
     }
 
@@ -261,15 +231,15 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
         if OfflineVideoPlugin.playbackMode == .offline {
             switch playerItem.status {
             case .readyToPlay:
-                print("📱 Offline content ready to play")
+                print("Offline content ready to play")
             case .failed:
                 if let error = playerItem.error {
-                    print("❌ Offline playback failed: \(error.localizedDescription)")
+                    print("Offline playback failed: \(error.localizedDescription)")
                 }
             case .unknown:
-                print("⏳ Offline content loading...")
+                print("Offline content loading...")
             @unknown default:
-                print("🔄 Unknown player item status")
+                print("Unknown player item status")
             }
         }
     }
@@ -287,7 +257,6 @@ class OfflineVideoPlugin: RNVAVPlayerPlugin {
         if OfflineVideoPlugin.playbackMode == .offline {
             if let urlAsset = playerItem.asset as? AVURLAsset {
                 let isLocalFile = urlAsset.url.isFileURL
-                print("📱 New offline content loaded: \(isLocalFile ? "local file" : "network")")
             }
         }
     }

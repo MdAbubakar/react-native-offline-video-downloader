@@ -62,10 +62,8 @@ class VideoDownloadManager: NSObject {
     @objc static func setSharedInstance(_ instance: VideoDownloadManager) {
         if sharedInstance == nil {
             sharedInstance = instance
-            print("✅ VideoDownloadManager singleton created")
         } else {
             sharedInstance?.eventEmitter = instance.eventEmitter
-            print("✅ VideoDownloadManager singleton updated (hot reload)")
         }
     }
     
@@ -98,7 +96,6 @@ class VideoDownloadManager: NSObject {
         
         MMKV.initialize(rootDir: nil)
         mmkv = MMKV(mmapID: "VideoDownloadManager")
-        print("✅ MMKV initialized")
         
         loadPersistedDownloadTasks()
         
@@ -134,7 +131,6 @@ class VideoDownloadManager: NSObject {
             object: nil
         )
         
-        print("📱 VideoDownloadManager initialized")
     }
         
     deinit {
@@ -144,19 +140,20 @@ class VideoDownloadManager: NSObject {
         
         if activeDownloads.isEmpty {
             downloadSession?.invalidateAndCancel()
-        } else {
-            print("⚠️ \(activeDownloads.count) downloads active - session kept alive")
         }
         
         NotificationCenter.default.removeObserver(self)
-        print("🗑️ VideoDownloadManager deinitialized")
     }
 
     private func setupDownloadSession() {
         
         guard downloadSession == nil else { return }
         
-        let identifier = "com.etv.ott.background-downloads"
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            return
+        }
+            
+        let identifier = "\(bundleIdentifier).background-downloads"
         let config = URLSessionConfiguration.background(withIdentifier: identifier)
            
         config.isDiscretionary = false
@@ -192,38 +189,21 @@ class VideoDownloadManager: NSObject {
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3.0) {
             self.checkForOrphanedDownloads()
         }
-        
-        print("✅ VideoDownloadManager initialized successfully")
-        print("📂 Downloads will be stored in: \(getDownloadsDirectoryPath())")
-        print("🛡️ Storage is PROTECTED (data directory)")
     }
     
     @objc private func handleJavascriptLoad() {
         isJavascriptLoaded = true
-        print("✅ JavaScript loaded - ready to emit events")
     }
     
     @objc private func handleHotReload() {
-        print("🔥 Hot reload detected - preserving session")
         
-        // ⭐ NEVER invalidate session - AVAssetDownloadTask cannot survive session invalidation
         isJavascriptLoaded = false
-        
-        let activeCount = activeDownloads.count
-        if activeCount > 0 {
-            print("📋 Preserving \(activeCount) active downloads:")
-            for id in activeDownloads.keys {
-                print("   - \(id)")
-            }
-        }
     }
     
     @objc private func appWillEnterForeground() {
-        print("📱 App entering foreground")
         
         for (downloadId, downloadTask) in activeDownloads {
             if downloadTask.state == .running {
-                print("🔄 Force refreshing: \(downloadId)")
                 downloadTask.suspend()
                 downloadTask.resume()
             }
@@ -250,26 +230,15 @@ class VideoDownloadManager: NSObject {
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: taskData)
             mmkv.set(jsonData, forKey: "download_\(downloadId)")
-            print("💾 Persisted task to MMKV: \(downloadId)")
         } catch {
-            print("❌ Failed to persist task: \(error)")
+            print("Failed to persist task: \(error)")
         }
     }
 
     private func loadPersistedDownloadTasks() {
-        print("📂 Loading persisted tasks from MMKV...")
-        
         let allKeys = mmkv.allKeys()
-        print("🔑 MMKV has \(allKeys.count) total keys")
-        
-        for key in allKeys {
-            if let keyString = key as? String {
-                print("🔑 Found key: \(keyString)")
-            }
-        }
         
         if allKeys.isEmpty {
-            print("ℹ️ No persisted tasks found")
             return
         }
         
@@ -285,16 +254,13 @@ class VideoDownloadManager: NSObject {
                             // Mark as incomplete until we verify with iOS
                             incompleteDownloads.insert(downloadId)
                             loadedCount += 1
-                            print("📝 Loaded persisted task: \(downloadId)")
                         }
                     } catch {
-                        print("⚠️ Failed to decode task data for key: \(keyString)")
+                        print("Failed to decode task data for key: \(keyString)")
                     }
                 }
             }
         }
-        
-        print("✅ Loaded \(loadedCount) persisted tasks")
     }
 
 
@@ -307,17 +273,15 @@ class VideoDownloadManager: NSObject {
                     
                     let updatedData = try JSONSerialization.data(withJSONObject: taskData)
                     mmkv.set(updatedData, forKey: "download_\(downloadId)")
-                    print("💾 Updated task state: \(downloadId) -> \(state)")
                 }
             } catch {
-                print("❌ Failed to update task state: \(error)")
+                print("Failed to update task state: \(error)")
             }
         }
     }
 
     private func removePersistedTask(downloadId: String) {
         mmkv.removeValue(forKey: "download_\(downloadId)")
-        print("🗑️ Removed persisted task: \(downloadId)")
     }
     
     // MARK: - Partial Download Support
@@ -325,7 +289,6 @@ class VideoDownloadManager: NSObject {
     private func savePartialDownload(downloadId: String, location: URL, options: [String: Any]?) {
         let fileManager = FileManager.default
         
-        // ⭐ Clean the path - remove .nofollow prefix if present
         var cleanPath = location.path
         if cleanPath.hasPrefix("/.nofollow/") {
             cleanPath = String(cleanPath.dropFirst("/.nofollow".count))
@@ -337,11 +300,10 @@ class VideoDownloadManager: NSObject {
         let existsAtLocation = fileManager.fileExists(atPath: cleanURL.path, isDirectory: &isDirectory)
         
         if existsAtLocation {
-            print("✅ Partial file exists at iOS location: \(cleanURL.path)")
             
             let partialInfo: [String: Any] = [
                 "absolutePath": cleanURL.absoluteString,
-                "relativePath": cleanURL.path,  // ⭐ Save cleaned path
+                "relativePath": cleanURL.path,
                 "downloadId": downloadId,
                 "savedAt": Date().timeIntervalSince1970,
                 "options": options ?? [:],
@@ -351,16 +313,10 @@ class VideoDownloadManager: NSObject {
             if let jsonData = try? JSONSerialization.data(withJSONObject: partialInfo),
                let jsonString = String(data: jsonData, encoding: .utf8) {
                 mmkv.set(jsonString, forKey: "partial_\(downloadId)")
-                print("💾 Saved partial info to MMKV: \(downloadId)")
-                print("📍 Saved path: \(cleanURL.path)")
             }
             
             return
         }
-        
-        // If file doesn't exist at cleaned location, try to find it
-        print("⚠️ File not at expected location: \(cleanURL.path)")
-        print("🔍 Searching UserManagedAssets...")
         
         let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
         let libraryPath = documentsPath.deletingLastPathComponent().appendingPathComponent("Library")
@@ -381,7 +337,6 @@ class VideoDownloadManager: NSObject {
                 
                 for assetItem in assetContents where assetItem.pathExtension == "movpkg" {
                     if assetItem.lastPathComponent.hasPrefix(downloadId) {
-                        print("✅ Found partial at: \(assetItem.path)")
                         
                         let partialInfo: [String: Any] = [
                             "absolutePath": assetItem.absoluteString,
@@ -395,36 +350,24 @@ class VideoDownloadManager: NSObject {
                         if let jsonData = try? JSONSerialization.data(withJSONObject: partialInfo),
                            let jsonString = String(data: jsonData, encoding: .utf8) {
                             mmkv.set(jsonString, forKey: "partial_\(downloadId)")
-                            print("💾 Saved partial info to MMKV: \(downloadId)")
-                            print("📍 Saved path: \(assetItem.path)")
                         }
-                        
                         return
                     }
                 }
             }
         } catch {
-            print("❌ Error searching for partial file: \(error)")
-        }
-        
-        print("❌ Could not find partial file for: \(downloadId)")
+            print("Error searching for partial file: \(error)")
+        }  
     }
 
     private func resumePartialDownloads() {
-        print("🔄 Checking for partial downloads...")
-        
         guard let allKeys = mmkv.allKeys() as? [String] else {
-            print("⚠️ Cannot get MMKV keys")
             return
         }
         
-        print("🔑 Total MMKV keys: \(allKeys.count)")
-        
         let partialKeys = allKeys.filter { $0.hasPrefix("partial_") && !$0.contains("partial_abs_") }
-        print("🔑 Found \(partialKeys.count) partial keys: \(partialKeys)")
         
         if partialKeys.isEmpty {
-            print("ℹ️ No partial downloads found")
             return
         }
         
@@ -436,17 +379,13 @@ class VideoDownloadManager: NSObject {
         for key in partialKeys {
             let downloadId = String(key.dropFirst("partial_".count))
             
-            // ⭐ Parse JSON to get partial info
             guard let jsonString = mmkv.string(forKey: key),
                   let jsonData = jsonString.data(using: .utf8),
                   let partialInfo = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
                   let relativePath = partialInfo["relativePath"] as? String else {
-                print("⚠️ Cannot parse partial info for key: \(key)")
                 mmkv.removeValue(forKey: key)
                 continue
             }
-            
-            print("📂 Partial path: \(relativePath)")
             
             let partialURL = documentsDirectory.appendingPathComponent(relativePath)
             
@@ -455,13 +394,10 @@ class VideoDownloadManager: NSObject {
             let exists = fileManager.fileExists(atPath: partialURL.path, isDirectory: &isDirectory)
             
             guard exists else {
-                print("⚠️ Partial file missing: \(downloadId) at \(partialURL.path)")
-                
                 // Try absolute path as fallback
                 if let absolutePath = partialInfo["absolutePath"] as? String,
                    let absoluteURL = URL(string: absolutePath),
                    fileManager.fileExists(atPath: absoluteURL.path) {
-                    print("✅ Found partial at absolute path: \(absoluteURL.path)")
                     resumePartialDownloadFrom(url: absoluteURL, downloadId: downloadId)
                     resumedCount += 1
                     continue
@@ -470,40 +406,28 @@ class VideoDownloadManager: NSObject {
                 mmkv.removeValue(forKey: key)
                 continue
             }
-            
-            print("✅ Found partial \(isDirectory.boolValue ? "directory" : "file"): \(partialURL.path)")
-            print("🔄 Resuming partial download: \(downloadId)")
-            
+
             resumePartialDownloadFrom(url: partialURL, downloadId: downloadId)
             resumedCount += 1
         }
-        
-        print("✅ Resumed \(resumedCount) partial downloads")
     }
 
     private func resumePartialDownloadFrom(url: URL, downloadId: String) {
-        print("🔄 Attempting to resume from: \(url.path)")
-        
-        // ⭐ Verify file exists before creating task
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: url.path) else {
-            print("❌ Partial file doesn't exist at: \(url.path)")
             mmkv.removeValue(forKey: "partial_\(downloadId)")
             return
         }
         
-        print("✅ Partial file verified at: \(url.path)")
         
         let partialAsset = AVURLAsset(url: url)
         var downloadOptions: [String: Any]? = nil
         
-        // Get saved options
         if let jsonString = mmkv.string(forKey: "partial_\(downloadId)"),
            let jsonData = jsonString.data(using: .utf8),
            let partialInfo = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
            let savedOptions = partialInfo["options"] as? [String: Any] {
             downloadOptions = savedOptions
-            print("✅ Restored download options for: \(downloadId)")
         }
         
         // Create task with original options
@@ -513,7 +437,6 @@ class VideoDownloadManager: NSObject {
             assetArtworkData: nil,
             options: downloadOptions
         ) else {
-            print("❌ Failed to create download task for: \(downloadId)")
             return
         }
         
@@ -524,7 +447,6 @@ class VideoDownloadManager: NSObject {
         downloadTask.resume()
         startProgressReporting(for: downloadId)
         
-        print("✅ Resumed partial: \(downloadId) with original quality settings")
         
         guard self.isJavascriptLoaded else {
             print("⏳ Waiting for JS to load before emitting")
@@ -544,7 +466,6 @@ class VideoDownloadManager: NSObject {
     private func removePartialDownload(downloadId: String) {
         mmkv.removeValue(forKey: "partial_\(downloadId)")
         mmkv.removeValue(forKey: "partial_abs_\(downloadId)")
-        print("🗑️ Removed partial download: \(downloadId)")
     }
 
 
@@ -566,16 +487,13 @@ class VideoDownloadManager: NSObject {
     }
     
     private func restorePendingDownloads() {
-        print("🔄 Checking for pending downloads...")
         
         guard let session = downloadSession else {
-            print("⚠️ Download session not ready")
             return
         }
         
         // Load persisted task metadata
         let persistedTasks = getAllPersistedTasks()
-        print("💾 Found \(persistedTasks.count) persisted tasks in MMKV")
         
         session.getAllTasks { [weak self] tasks in
             guard let self = self else { return }
@@ -583,7 +501,6 @@ class VideoDownloadManager: NSObject {
             Thread.sleep(forTimeInterval: 0.1)
             
             DispatchQueue.main.async {
-                print("📊 iOS returned \(tasks.count) tasks")
                 
                 var restoredCount = 0
                 var processedDownloadIds = Set<String>()
@@ -593,13 +510,10 @@ class VideoDownloadManager: NSObject {
                         continue
                     }
                     
-                    // Get downloadId from taskDescription (only reliable way for AVAssetDownloadTask)
                     var downloadId = downloadTask.taskDescription
                     
-                    // If not found, try to match with persisted tasks by taskIdentifier
                     if downloadId == nil || downloadId?.isEmpty == true {
                         let taskId = downloadTask.taskIdentifier
-                        print("⚠️ No taskDescription, checking persisted tasks for taskId: \(taskId)")
                         
                         for persistedTask in persistedTasks {
                             if let savedId = persistedTask["downloadId"] as? String,
@@ -607,18 +521,15 @@ class VideoDownloadManager: NSObject {
                                savedTaskId == taskId,
                                !processedDownloadIds.contains(savedId) {
                                 downloadId = savedId
-                                print("🔗 Matched by taskIdentifier: \(taskId) -> \(savedId)")
                                 break
                             }
                         }
                         
-                        // If still no match, use first unprocessed persisted task
                         if downloadId == nil || downloadId?.isEmpty == true {
                             for persistedTask in persistedTasks {
                                 if let savedId = persistedTask["downloadId"] as? String,
                                    !processedDownloadIds.contains(savedId) {
                                     downloadId = savedId
-                                    print("🔗 Matched by first available: \(savedId)")
                                     break
                                 }
                             }
@@ -626,33 +537,26 @@ class VideoDownloadManager: NSObject {
                     }
                     
                     guard let id = downloadId, !id.isEmpty else {
-                        print("⚠️ Task has no identifier, canceling")
                         downloadTask.cancel()
                         continue
                     }
                     
-                    // Avoid processing same download twice
                     if processedDownloadIds.contains(id) {
-                        print("⏭️ Already processed: \(id)")
                         continue
                     }
                     processedDownloadIds.insert(id)
                     
                     let taskState = downloadTask.state
-                    print("🔍 Found task: \(id), state: \(taskState.rawValue)")
                     
                     switch taskState {
                     case .running, .suspended:
-                        // Add to activeDownloads
                         self.activeDownloads[id] = downloadTask
                         
-                        // Get progress
                         let progress = downloadTask.progress
                         let percentage = progress.totalUnitCount > 0
                             ? (Double(progress.completedUnitCount) / Double(progress.totalUnitCount)) * 100
                             : 0
                         
-                        // Restore progress info
                         self.downloadProgress[id] = DownloadProgressInfo(
                             percentage: Float(percentage),
                             downloadedBytes: Int64(progress.completedUnitCount),
@@ -660,49 +564,36 @@ class VideoDownloadManager: NSObject {
                             state: taskState == .running ? "downloading" : "stopped"
                         )
                         
-                        // Remove from incomplete set
                         self.incompleteDownloads.remove(id)
                         
-                        // Force refresh (like react-native-background-downloader)
                         if taskState == .running {
                             downloadTask.suspend()
                             downloadTask.resume()
-                            print("🔄 Force refreshed running task")
                         } else if taskState == .suspended {
                             downloadTask.resume()
-                            print("▶️ Resumed suspended task")
                         }
                         
-                        // Update persisted state
                         self.updatePersistedTaskState(downloadId: id, state: "active")
                         
-                        // Start progress reporting
                         self.startProgressReporting(for: id)
                         
-                        print("✅ Restored: \(id) at \(Int(percentage))%")
                         restoredCount += 1
                         
                     case .completed:
-                        print("⏭️ Task already completed: \(id)")
                         self.removePersistedTask(downloadId: id)
                         
                     case .canceling:
-                        print("⏭️ Task is canceling: \(id)")
                         self.removePersistedTask(downloadId: id)
                         
                     @unknown default:
-                        print("⚠️ Unknown state: \(taskState.rawValue)")
+                        print("Unknown state: \(taskState.rawValue)")
                     }
                 }
                 
-                print("📊 Restoration complete: \(restoredCount) restored")
-                
-                // Clean up persisted tasks that weren't found in iOS session
                 for persistedTask in persistedTasks {
                     if let savedId = persistedTask["downloadId"] as? String,
                        !processedDownloadIds.contains(savedId),
                        self.activeDownloads[savedId] == nil {
-                        print("🧹 Cleaning up stale persisted task: \(savedId)")
                         self.removePersistedTask(downloadId: savedId)
                     }
                 }
@@ -714,7 +605,6 @@ class VideoDownloadManager: NSObject {
         if let wrapper = notification.object as? NSObject,
            let handler = wrapper.value(forKey: "handler") as? () -> Void {
             self.backgroundCompletionHandler = handler
-            print("✅ Received background completion handler via notification")
         }
     }
     
@@ -723,13 +613,11 @@ class VideoDownloadManager: NSObject {
     }
     
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        print("✅ Background session finished all events")
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
             if let handler = self.backgroundCompletionHandler {
-                print("📱 Calling iOS background completion handler")
                 handler()
                 self.backgroundCompletionHandler = nil
             }
@@ -741,13 +629,10 @@ class VideoDownloadManager: NSObject {
         let wasConnected = self?.isNetworkAvailable ?? true
         self?.isNetworkAvailable = path.status == .satisfied
                
-        print("📶 Network status: \(path.status == .satisfied ? "Connected" : "Disconnected")")
-               
         if !wasConnected && self?.isNetworkAvailable == true {
-            print("📶 Network reconnected - attempting to resume stalled downloads")
             self?.resumeStalledDownloads()
         } else if self?.isNetworkAvailable == false {
-                print("📵 Network disconnected")
+                print("Network disconnected")
             }
         }
            
@@ -763,8 +648,6 @@ class VideoDownloadManager: NSObject {
             return
         }
         
-        print("🔍 Checking for orphaned completed downloads...")
-        
         let fileManager = FileManager.default
         let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
         let libraryPath = documentsPath.deletingLastPathComponent().appendingPathComponent("Library")
@@ -779,7 +662,6 @@ class VideoDownloadManager: NSObject {
             var processedFiles = Set<String>()
             
             for item in libraryContents where item.lastPathComponent.hasPrefix("com.apple.UserManagedAssets.") {
-                print("📁 Scanning directory: \(item.lastPathComponent)")
                 
                 let assetContents = try fileManager.contentsOfDirectory(
                     at: item,
@@ -797,7 +679,6 @@ class VideoDownloadManager: NSObject {
                     
                     if isDownloadComplete(at: assetItem) {
                         if let downloadId = extractDownloadIdFromFilename(fileName) {
-                            print("✅ Found complete orphaned download: \(downloadId)")
                             DispatchQueue.main.async {
                                 self.registerOrphanedDownload(downloadId: downloadId, location: assetItem)
                             }
@@ -806,10 +687,9 @@ class VideoDownloadManager: NSObject {
                 }
             }
             
-            print("✅ Orphan check complete. Processed \(processedFiles.count) unique files")
             
         } catch {
-            print("❌ Error checking for orphaned downloads: \(error)")
+            print("Error checking for orphaned downloads: \(error)")
         }
     }
     
@@ -817,7 +697,6 @@ class VideoDownloadManager: NSObject {
         let size = getFileSize(at: location)
         
         guard size > 0 else {
-            print("⚠️ Invalid file size for orphaned download")
             return
         }
         
@@ -833,16 +712,11 @@ class VideoDownloadManager: NSObject {
             localUrl: location
         ) { success in
             if success {
-                print("✅ Registered aggregate download: \(downloadId)")
                 
                 guard self.isJavascriptLoaded else {
-                    print("⏳ Waiting for JS to load before emitting")
                     return
                 }
                 
-                print("✅ Registered download: \(downloadId) (\(self.formatBytes(size)))")
-                print("✅ Registered orphaned download: \(downloadId)")
-                // Emit completion event
                 DispatchQueue.main.async {
                     self.eventEmitter?.sendEvent(withName: "DownloadProgress", body: [
                         "downloadId": downloadId,
@@ -877,24 +751,15 @@ class VideoDownloadManager: NSObject {
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory),
               isDirectory.boolValue else {
-            print("⚠️ Path doesn't exist or is not a directory: \(url.path)")
             return false
         }
-        
-        print("🔍 Validating asset at: \(url.lastPathComponent)")
         
         let asset = AVURLAsset(url: url)
         
         let durationSeconds = CMTimeGetSeconds(asset.duration)
         let isPlayable = asset.isPlayable
         
-        print("✅ Asset validation passed:")
-        print("   - Duration: \(String(format: "%.1f", durationSeconds))s")
-        print("   - Playable: \(isPlayable)")
-        
         let isComplete = durationSeconds > 0 && isPlayable
-        print("🔍 Validation for \(url.lastPathComponent.components(separatedBy: "_").first ?? "unknown"): \(isComplete)")
-        
         return isComplete
     }
     
@@ -905,7 +770,6 @@ class VideoDownloadManager: NSObject {
         rejecter: @escaping RCTPromiseRejectBlock
     ) {
         if masterUrl.contains(".movpkg") {
-                print("⏭️ Skipping track parsing for .movpkg file")
                 resolver([
                     "tracks": [],
                     "message": "Local .movpkg file - no track parsing needed"
@@ -935,15 +799,10 @@ class VideoDownloadManager: NSObject {
                         return
                     }
                     
-                    // FIXED: Detect stream type using Android-like logic
                     let streamType = self.detectStreamTypeAdvanced(asset: asset)
-                    print("🔍 Detected stream type: \(streamType)")
                     
-                    // Define allowed qualities (matching Android)
                     let allowedQualities = [480, 720, 1080]
-                    print("🎯 Filtering for allowed qualities: \(allowedQualities)")
                     
-                    // MOVED: Variables moved to scope where they'll be used
                     var audioTracks: [[String: Any]] = []
                     var totalDurationSec = 0.0
                     
@@ -976,9 +835,6 @@ class VideoDownloadManager: NSObject {
                                 let secondHeight = second["height"] as? Int ?? 0
                                 return firstHeight > secondHeight
                             }
-                            
-                            print("✅ Final curated qualities: \(videoTrackIdentifiers.keys.sorted().map { "\($0)p" }.joined(separator: ", "))")
-                            print("✅ Total: \(sortedVideoTracks.count) video, \(audioTracks.count) audio (\(streamType))")
                             
                             let result: [String: Any] = [
                                 "videoTracks": sortedVideoTracks,
@@ -1058,7 +914,6 @@ class VideoDownloadManager: NSObject {
                     
                     // Detect stream type
                     let streamType = self.detectStreamTypeAdvanced(asset: asset)
-                    print("🔍 Stream type for download: \(streamType)")
                     
                     // Configure download options
                     var downloadOptions: [String: Any] = [:]
@@ -1117,7 +972,6 @@ class VideoDownloadManager: NSObject {
                 assetArtworkData: nil,
                 options: downloadOptions.isEmpty ? nil : downloadOptions
             ) else {
-                print("❌ Failed to create download task, recreating session...")
                 
                 guard let retryTask = downloadSession?.makeAssetDownloadTask(
                     asset: asset,
@@ -1125,7 +979,6 @@ class VideoDownloadManager: NSObject {
                     assetArtworkData: nil,
                     options: downloadOptions.isEmpty ? nil : downloadOptions
                 ) else {
-                    print("❌ Failed to create download task after session recreation")
                     rejecter("DOWNLOAD_TASK_FAILED", "Failed to create download task", nil)
                     return
                 }
@@ -1181,7 +1034,6 @@ class VideoDownloadManager: NSObject {
             downloadTask.resume()
             
             guard isJavascriptLoaded else {
-                print("⏳ Waiting for JS to load before emitting")
                 return
             }
             
@@ -1193,7 +1045,6 @@ class VideoDownloadManager: NSObject {
                 ])
             }
             
-            print("📥 Download started for \(downloadId)")
             downloadToTrackMapping[downloadId] = track
             
             let response: [String: Any] = [
@@ -1214,7 +1065,6 @@ class VideoDownloadManager: NSObject {
         DispatchQueue.main.async {
             for (downloadId, downloadTask) in self.activeDownloads {
                 if downloadTask.state == .suspended {
-                    print("🔄 Resuming stalled download: \(downloadId)")
                     downloadTask.resume()
                 }
             }
@@ -1231,8 +1081,6 @@ class VideoDownloadManager: NSObject {
             return
         }
         let currentProgress = downloadProgress[downloadId]?.percentage ?? 0.0
-        print("📊 Pausing at \(currentProgress)% progress")
-        print("⏸️ Pausing download: \(downloadId)")
         
         downloadTask.suspend()
         
@@ -1241,7 +1089,6 @@ class VideoDownloadManager: NSObject {
         stopProgressReporting(for: downloadId)
         
         guard isJavascriptLoaded else {
-            print("⏳ Waiting for JS to load before emitting")
             return
         }
         
@@ -1253,7 +1100,6 @@ class VideoDownloadManager: NSObject {
             ])
         }
         
-        print("✅ Download paused: \(downloadId)")
         resolver(["downloadId": downloadId, "status": "stopped"])
     }
     
@@ -1263,7 +1109,6 @@ class VideoDownloadManager: NSObject {
         rejecter: @escaping RCTPromiseRejectBlock
     ) {
         if incompleteDownloads.contains(downloadId) {
-            print("⚠️ Download was incomplete - needs to be restarted")
             rejecter("DOWNLOAD_INCOMPLETE", "Download is incomplete and needs to be restarted. Please start a new download.", nil)
             return
         }
@@ -1272,11 +1117,8 @@ class VideoDownloadManager: NSObject {
             return
         }
         
-        print("▶️ Resuming download: \(downloadId)")
-        
         if var progressInfo = downloadProgress[downloadId] {
             let currentProgress = progressInfo.percentage
-            print("📊 Resuming from \(currentProgress)% progress")
             
             progressInfo.state = "downloading"
             downloadProgress[downloadId] = progressInfo
@@ -1289,7 +1131,6 @@ class VideoDownloadManager: NSObject {
         }
         
         guard isJavascriptLoaded else {
-            print("⏳ Waiting for JS to load before emitting")
             return
         }
         
@@ -1302,7 +1143,6 @@ class VideoDownloadManager: NSObject {
             ])
         }
         
-        print("✅ Download resumed: \(downloadId) at \(Int(currentProgress))%")
         resolver(["downloadId": downloadId, "status": "downloading"])
     }
     
@@ -1311,9 +1151,6 @@ class VideoDownloadManager: NSObject {
         resolver: @escaping RCTPromiseResolveBlock,
         rejecter: @escaping RCTPromiseRejectBlock
     ) {
-        print("🔄 Restarting incomplete download: \(downloadId)")
-        
-        // Check if it's actually incomplete
         guard incompleteDownloads.contains(downloadId) else {
             rejecter("NOT_INCOMPLETE", "Download is not marked as incomplete", nil)
             return
@@ -1325,8 +1162,6 @@ class VideoDownloadManager: NSObject {
            let masterUrl = taskData["masterUrl"] as? String,
            let selectedHeight = taskData["selectedHeight"] as? Int,
            let selectedWidth = taskData["selectedWidth"] as? Int {
-            
-            print("📋 Found task data for \(downloadId)")
             
             // Remove incomplete marker
             incompleteDownloads.remove(downloadId)
@@ -1390,19 +1225,15 @@ class VideoDownloadManager: NSObject {
         resolver: @escaping RCTPromiseResolveBlock,
         rejecter: @escaping RCTPromiseRejectBlock
     ) {
-        print("🛑 Attempting to cancel/delete download: \(downloadId)")
         
         UserDefaults.standard.set(true, forKey: "cancelled_\(downloadId)")
         
         // If download is active, cancel it
         if let downloadTask = activeDownloads[downloadId] {
-            print("🛑 Cancelling active download task: \(downloadId)")
             downloadTask.cancel()
             activeDownloads.removeValue(forKey: downloadId)
             downloadProgress.removeValue(forKey: downloadId)
             stopProgressReporting(for: downloadId)
-        } else {
-            print("ℹ️ Download not active (may be completed or not started): \(downloadId)")
         }
         
         removePersistedTask(downloadId: downloadId)
@@ -1413,7 +1244,6 @@ class VideoDownloadManager: NSObject {
                 resolver(success)
             }
         } else {
-            print("ℹ️ Download cancelled before registration: \(downloadId)")
             resolver(true)
         }
     }
@@ -1422,24 +1252,17 @@ class VideoDownloadManager: NSObject {
         resolver: @escaping RCTPromiseResolveBlock,
         rejecter: @escaping RCTPromiseRejectBlock
     ) {
-        print("📋 Getting all downloads")
-        
         let registeredDownloads = offlineRegistry.getAllDownloadedStreams()
-        print("📊 Found \(registeredDownloads.count) registered downloads")
-        
         var allDownloads: [[String: Any]] = []
         
-        // ⭐ Add registered (completed) downloads with STATE
         for download in registeredDownloads {
             if let downloadId = download["downloadId"] as? String {
                 var downloadInfo = download
                 
-                // ⭐ Add state information for completed downloads
                 downloadInfo["state"] = "completed"
                 downloadInfo["progress"] = 100
                 downloadInfo["isCompleted"] = true
                 
-                print("📱 Including registered download: \(downloadId) (completed)")
                 allDownloads.append(downloadInfo)
             }
         }
@@ -1457,14 +1280,12 @@ class VideoDownloadManager: NSObject {
                     "formattedTotal": formatBytes(progressInfo.totalBytes),
                     "isCompleted": false
                 ])
-                print("📱 Including active download: \(downloadId) (\(progressInfo.state))")
             }
         }
         
         // Add incomplete downloads
         for downloadId in incompleteDownloads {
             if !allDownloads.contains(where: { ($0["downloadId"] as? String) == downloadId }) {
-                print("⏸️ Including incomplete download: \(downloadId)")
                 allDownloads.append([
                     "downloadId": downloadId,
                     "state": "stopped",
@@ -1475,7 +1296,6 @@ class VideoDownloadManager: NSObject {
             }
         }
         
-        print("📋 Found \(allDownloads.count) downloads total")
         resolver(allDownloads)
     }
 
@@ -1497,7 +1317,6 @@ class VideoDownloadManager: NSObject {
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             return attributes[.size] as? Int64 ?? 0
         } catch {
-            print("⚠️ Failed to get file size for \(url): \(error)")
             return 0
         }
     }
@@ -1525,8 +1344,6 @@ class VideoDownloadManager: NSObject {
         let downloadId = findDownloadId(for: aggregateAssetDownloadTask)
         guard !downloadId.isEmpty else { return }
         
-        print("✅ Aggregate download completed: \(downloadId) at \(location)")
-        
         stopProgressReporting(for: downloadId)
 
         let actualFileSize = getFileSize(at: location)
@@ -1534,10 +1351,8 @@ class VideoDownloadManager: NSObject {
         // Register with OfflineVideoRegistry
         offlineRegistry.registerDownload(downloadId: downloadId, localUrl: location) { success in
             if success {
-                print("✅ Registered aggregate download: \(downloadId)")
                 
                 guard self.isJavascriptLoaded else {
-                    print("⏳ Waiting for JS to load before emitting")
                     return
                 }
                 // Emit completion event
@@ -1570,7 +1385,6 @@ class VideoDownloadManager: NSObject {
         resolver: @escaping RCTPromiseResolveBlock,
         rejecter: @escaping RCTPromiseRejectBlock
     ) {
-        print("🔄 Syncing download progress...")
         restorePendingDownloads()
         resumePartialDownloads()
         
@@ -1617,11 +1431,8 @@ class VideoDownloadManager: NSObject {
     private func createAsset(from url: URL, headers: [String: String]?) -> AVURLAsset {
         var options: [String: Any] = [:]
         
-        // FIXED: Use AVFoundation's built-in header support instead of custom loader
         if let headers = headers, !headers.isEmpty {
-            // Use the official AVURLAssetHTTPHeaderFieldsKey for custom headers
             options["AVURLAssetHTTPHeaderFieldsKey"] = headers
-            print("📋 Applied \(headers.count) custom headers to AVURLAsset")
         }
         
         return AVURLAsset(url: url, options: options.isEmpty ? nil : options)
@@ -1636,38 +1447,28 @@ class VideoDownloadManager: NSObject {
         return headers
     }
     
-    // FIXED: Advanced stream type detection matching Android logic
     private func detectStreamTypeAdvanced(asset: AVURLAsset) -> StreamType {
-        // Check for separate audio renditions (like Android's multivariant playlist check)
         let hasAudioRenditions = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) != nil
         
-        // Check if variants have video only (no audio attributes)
         let hasVideoOnlyVariants = asset.variants.contains { variant in
             variant.videoAttributes != nil && variant.audioAttributes == nil
         }
         
-        // Check if variants have muxed audio+video
         let hasMuxedVariants = asset.variants.contains { variant in
             variant.videoAttributes != nil && variant.audioAttributes != nil
         }
         
-        // Android-like logic: separate audio renditions = SEPARATE_AUDIO_VIDEO
         if hasAudioRenditions && hasVideoOnlyVariants {
-            print("🔍 Found separate AUDIO renditions + video-only variants - SEPARATE_AUDIO_VIDEO")
             return .separateAudioVideo
         }
         
-        // Muxed variants only = MUXED_VIDEO_AUDIO
         if hasMuxedVariants && !hasVideoOnlyVariants {
-            print("🔍 Found muxed variants only - MUXED_VIDEO_AUDIO")
             return .muxedVideoAudio
         }
         
-        print("🔍 Unknown stream structure - UNKNOWN")
         return .unknown
     }
     
-    // FIXED: Process video variants with segment sampling (matching Android)
     private func processVideoVariantsWithSampling(
         asset: AVURLAsset,
         masterUrl: String,
@@ -1690,20 +1491,15 @@ class VideoDownloadManager: NSObject {
             let bitrate = Int(averageBitRate > 0 ? averageBitRate : peakBitRate)
 
             guard bitrate > 0 else {
-                print("⚠️ Skipping variant with invalid bitrate")
                 continue
             }
             
-            print("🔍 Found video track: \(height)p, \(bitrate) bps")
             
-            // Filter by allowed qualities
             if allowedQualities.contains(height) && bitrate > 0 {
-                // Check for I-Frame streams (similar to Android logic)
                 let expectedMinBitrate = getMinExpectedBitrate(height: height)
                 let isProbablyIFrame = bitrate < expectedMinBitrate
                 
                 if !isProbablyIFrame {
-                    // FIXED: Calculate size using segment sampling (like Android)
                     let estimatedSizeBytes = await calculateSizeWithSegmentSampling(
                         variant: variant,
                         masterUrl: masterUrl,
@@ -1736,19 +1532,13 @@ class VideoDownloadManager: NSObject {
                     videoTracks.append(trackData)
                     
                     let sizeType = streamType == .separateAudioVideo ? "video only" : "video+audio"
-                    print("✅ Selected \(height)p: \(formatBytes(estimatedSizeBytes)) (\(sizeType)) [segment sampled]")
-                } else {
-                    print("🚫 Filtered I-FRAME: \(height)p, \(bitrate) bps")
                 }
-            } else if !allowedQualities.contains(height) {
-                print("⏭️ Skipped \(height)p (not in allowed qualities)")
             }
         }
         
         completion(videoTracks, videoTrackIdentifiers)
     }
     
-    // FIXED: Segment sampling for accurate size calculation (matching Android logic)
     private func calculateSizeWithSegmentSampling(
         variant: AVAssetVariant,
         masterUrl: String,
@@ -1756,18 +1546,15 @@ class VideoDownloadManager: NSObject {
         streamType: StreamType,
         headers: [String: String]?
     ) async -> Int64 {
-        // First try segment sampling approach (like Android)
         if let sampledSize = await performSegmentSampling(
             variant: variant,
             masterUrl: masterUrl,
             headers: headers
         ) {
-            print("📊 Segment sampling successful: \(formatBytes(sampledSize))")
             return sampledSize
         }
         
         // Fallback to bitrate calculation
-        print("📊 Falling back to bitrate calculation")
         return calculateAccurateStreamSize(
             variant: variant,
             duration: duration,
@@ -1776,7 +1563,6 @@ class VideoDownloadManager: NSObject {
         )
     }
     
-    // FIXED: Implement segment sampling (iOS version of Android logic)
     private func performSegmentSampling(
         variant: AVAssetVariant,
         masterUrl: String,
@@ -1785,7 +1571,6 @@ class VideoDownloadManager: NSObject {
         
         do {
             guard let variantURL = getVariantPlaylistURL(from: variant, masterUrl: masterUrl) else {
-                print("⚠️ Could not get variant playlist URL")
                 return nil
             }
             
@@ -1798,21 +1583,16 @@ class VideoDownloadManager: NSObject {
             return sampledBytes
             
         } catch {
-            print("⚠️ Segment sampling failed: \(error)")
             return nil
         }
     }
     
-    // MARK: - Segment Sampling Implementation (Based on Android)
-
     private func getVariantPlaylistURL(from variant: AVAssetVariant, masterUrl: String) -> URL? {
-        // Parse master playlist to extract variant URL (iOS equivalent of Android's playlist parsing)
         do {
             let masterURL = URL(string: masterUrl)!
             let masterData = try Data(contentsOf: masterURL)
             let masterContent = String(data: masterData, encoding: .utf8) ?? ""
             
-            // Find the variant line that matches our bitrate/resolution
             let lines = masterContent.components(separatedBy: .newlines)
             var foundVariantLine = false
             
@@ -1820,7 +1600,6 @@ class VideoDownloadManager: NSObject {
                 let line = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
                 
                 if line.hasPrefix("#EXT-X-STREAM-INF:") {
-                    // Check if this matches our variant
                     if line.contains("BANDWIDTH=\(variant.peakBitRate ?? 0)") ||
                        line.contains("AVERAGE-BANDWIDTH=\(variant.averageBitRate ?? 0)") {
                         foundVariantLine = true
@@ -1829,14 +1608,13 @@ class VideoDownloadManager: NSObject {
                 }
                 
                 if foundVariantLine && !line.hasPrefix("#") && !line.isEmpty {
-                    // This is the URL for our variant
                     let variantURLString = line.hasPrefix("http") ? line : resolveURL(base: masterUrl, relative: line)
                     return URL(string: variantURLString)
                 }
             }
             
         } catch {
-            print("⚠️ Failed to parse master playlist: \(error)")
+            print("Failed to parse master playlist: \(error)")
         }
         
         return nil
@@ -1847,11 +1625,9 @@ class VideoDownloadManager: NSObject {
         headers: [String: String]?,
         sampleCount: Int
     ) async throws -> Int64 {
-        // iOS implementation of Android's segment sampling
         return try await withCheckedThrowingContinuation { continuation in
             Task {
                 do {
-                    // Download playlist
                     let playlist = try await downloadPlaylist(url: playlistURL, headers: headers)
                     let segments = parseSegmentURLs(playlist: playlist, baseURL: playlistURL.absoluteString)
                     
@@ -1860,18 +1636,15 @@ class VideoDownloadManager: NSObject {
                         return
                     }
                     
-                    // Sample distributed segments (like Android's distributeIndices)
                     let sampleIndices = distributeIndices(total: segments.count, sampleCount: sampleCount)
                     var segmentSizes: [Int64] = []
                     
-                    // Sample segments in parallel (like Android)
                     await withTaskGroup(of: Int64.self) { group in
                         for index in sampleIndices.prefix(sampleCount) {
                             group.addTask {
                                 do {
                                     return try await self.getSegmentSize(url: segments[index], headers: headers)
                                 } catch {
-                                    print("⚠️ Failed to sample segment \(index): \(error)")
                                     return 0
                                 }
                             }
@@ -1889,12 +1662,8 @@ class VideoDownloadManager: NSObject {
                         return
                     }
                     
-                    // Calculate total size (like Android)
                     let avgSize = segmentSizes.reduce(0, +) / Int64(segmentSizes.count)
                     let totalSize = avgSize * Int64(segments.count)
-                    
-                    print("🎯 iOS Segment sampling: \(segmentSizes.count)/\(sampleCount) segments sampled")
-                    print("🎯 Average: \(formatBytes(avgSize)), Total: \(formatBytes(totalSize))")
                     
                     continuation.resume(returning: totalSize)
                     
@@ -1905,13 +1674,12 @@ class VideoDownloadManager: NSObject {
         }
     }
 
-    // MARK: - Helper Methods (iOS versions of Android methods)
+    // MARK: - Helper Methods
 
     private func downloadPlaylist(url: URL, headers: [String: String]?) async throws -> String {
         var request = URLRequest(url: url)
         request.timeoutInterval = 10.0
         
-        // Apply headers
         headers?.forEach { key, value in
             request.setValue(value, forHTTPHeaderField: key)
         }
@@ -1947,7 +1715,7 @@ class VideoDownloadManager: NSObject {
         guard let segmentURL = URL(string: url) else { return 0 }
         
         var request = URLRequest(url: segmentURL)
-        request.httpMethod = "HEAD"  // Only get headers, not content
+        request.httpMethod = "HEAD"
         request.timeoutInterval = 5.0
         
         headers?.forEach { key, value in
@@ -1969,7 +1737,6 @@ class VideoDownloadManager: NSObject {
         
         var indices: [Int] = []
         
-        // Strategic sampling (matching Android's 8-segment strategy)
         switch sampleCount {
         case 8:
             indices.append(0)                            // Start
@@ -1981,7 +1748,6 @@ class VideoDownloadManager: NSObject {
             indices.append(Int(Double(total) * 0.75))    // 75%
             indices.append(total - 1)                    // End
         default:
-            // Even distribution fallback
             let step = Float(total) / Float(sampleCount)
             for i in 0..<sampleCount {
                 let index = Int(Float(i) * step).clamped(to: 0...(total-1))
@@ -1989,7 +1755,7 @@ class VideoDownloadManager: NSObject {
             }
         }
         
-        return Array(Set(indices)).sorted() // Remove duplicates and sort
+        return Array(Set(indices)).sorted()
     }
 
     private func resolveURL(base: String, relative: String) -> String {
@@ -2006,12 +1772,11 @@ class VideoDownloadManager: NSObject {
     private func processAudioTracks(asset: AVURLAsset, duration: Double) -> [[String: Any]] {
         var audioTracks: [[String: Any]] = []
         
-        // Process audio tracks from mediaSelectionGroups
         if let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) {
             for option in audioGroup.options {
                 let language = option.locale?.languageCode ?? "unknown"
                 let channelCount = getChannelCount(for: option)
-                let audioBitrate = 128000 // Default audio bitrate
+                let audioBitrate = 128000
                 
                 let estimatedSizeBytes = calculateAudioOnlySize(audioBitrate: audioBitrate, duration: duration)
                 
@@ -2039,7 +1804,6 @@ class VideoDownloadManager: NSObject {
         let displayName = option.displayName.lowercased()
         let extendedLanguageTag = option.extendedLanguageTag?.lowercased() ?? ""
         
-        // Check both display name and language tag
         let combinedText = displayName + " " + extendedLanguageTag
         
         if combinedText.contains("7.1") {
@@ -2054,7 +1818,6 @@ class VideoDownloadManager: NSObject {
             return 1
         }
         
-        // Default to stereo
         return 2
     }
 
@@ -2094,20 +1857,17 @@ class VideoDownloadManager: NSObject {
         }
     }
 
-    // FIXED: Accurate stream size calculation with fallbacks
     private func calculateAccurateStreamSize(
         variant: AVAssetVariant,
         duration: Double,
         streamType: StreamType,
         headers: [String: String]?
     ) -> Int64 {
-        // Safe bitrate handling
         let peakBitrate = variant.peakBitRate ?? 0
         let avgBitrate = variant.averageBitRate ?? 0
         let bitrate = Int64(avgBitrate > 0 ? avgBitrate : peakBitrate)
         
         guard bitrate > 0 && duration > 0 else {
-            print("⚠️ Invalid bitrate (\(bitrate)) or duration (\(duration))")
             return estimateSizeFromResolution(variant: variant, duration: duration, streamType: streamType)
         }
         
@@ -2122,17 +1882,14 @@ class VideoDownloadManager: NSObject {
             estimatedSize = calculateVideoOnlySize(videoBitrate: bitrate, duration: duration)
         }
         
-        print("📊 Size calculation: \(bitrate) bps × \(duration)s = \(formatBytes(estimatedSize))")
         return estimatedSize
     }
     
-    // FIXED: Fallback size estimation based on resolution
     private func estimateSizeFromResolution(variant: AVAssetVariant, duration: Double, streamType: StreamType) -> Int64 {
         guard let videoAttributes = variant.videoAttributes else { return 0 }
         
         let height = Int(videoAttributes.presentationSize.height)
         
-        // Estimate bitrate based on resolution (conservative estimates)
         let estimatedBitrate: Int64
         switch height {
         case 480:
@@ -2142,10 +1899,8 @@ class VideoDownloadManager: NSObject {
         case 1080:
             estimatedBitrate = 6_000_000  // 6 Mbps
         default:
-            estimatedBitrate = Int64(height * 2000) // 2kbps per pixel height
+            estimatedBitrate = Int64(height * 2000)
         }
-        
-        print("📊 Using estimated bitrate for \(height)p: \(estimatedBitrate) bps")
         
         switch streamType {
         case .separateAudioVideo:
@@ -2160,12 +1915,10 @@ class VideoDownloadManager: NSObject {
     private func calculateVideoOnlySize(videoBitrate: Int64, duration: Double) -> Int64 {
         guard videoBitrate > 0 && duration > 0 else { return 0 }
         
-        // Calculate raw size with HLS overhead (segments, playlists, etc.)
         let rawBits = Double(videoBitrate) * duration
         let rawBytes = rawBits / 8.0
         
-        // Add realistic HLS overhead (5-10% for segments + metadata)
-        let hlsOverhead = 1.02 // 2% overhead
+        let hlsOverhead = 1.02
         let estimatedBytes = rawBytes * hlsOverhead
         
         return Int64(estimatedBytes)
@@ -2174,12 +1927,10 @@ class VideoDownloadManager: NSObject {
     private func calculateMuxedStreamSize(combinedBitrate: Int64, duration: Double) -> Int64 {
         guard combinedBitrate > 0 && duration > 0 else { return 0 }
         
-        // For muxed streams, bitrate already includes audio
         let rawBits = Double(combinedBitrate) * duration
         let rawBytes = rawBits / 8.0
         
-        // Add HLS overhead
-        let hlsOverhead = 1.02 // 2% overhead
+        let hlsOverhead = 1.02
         let estimatedBytes = rawBytes * hlsOverhead
         
         return Int64(estimatedBytes)
@@ -2189,7 +1940,7 @@ class VideoDownloadManager: NSObject {
         guard audioBitrate > 0 && duration > 0 else { return 0 }
         
         let audioBits = Double(audioBitrate) * duration
-        let audioBytes = audioBits / 8.0 * 1.02 // 2% overhead
+        let audioBytes = audioBits / 8.0 * 1.02
         
         return Int64(audioBytes)
     }
@@ -2203,9 +1954,7 @@ class VideoDownloadManager: NSObject {
     
     private func startProgressReporting(for downloadId: String) {
         stopProgressReporting(for: downloadId)
-            
-        print("📊 Started progress reporting for: \(downloadId)")
-            
+
         let timer = Timer.scheduledTimer(withTimeInterval: progressUpdateInterval, repeats: true) { [weak self] _ in
             guard let self = self,
                 let downloadTask = self.activeDownloads[downloadId] else {
@@ -2234,13 +1983,11 @@ class VideoDownloadManager: NSObject {
             if let timer = progressTimers[downloadId] {
                 timer.invalidate()
                 progressTimers.removeValue(forKey: downloadId)
-                print("🛑 Stopped progress reporting for: \(downloadId)")
             }
         }
         
         private func emitProgressEvent(downloadId: String, progress: Float, downloadedBytes: Int64, state: String) {
             guard isJavascriptLoaded else {
-                print("⏳ Waiting for JS to load before emitting")
                 return
             }
             let totalBytes = getTotalBytes(downloadId: downloadId)
@@ -2369,8 +2116,6 @@ class VideoDownloadManager: NSObject {
         
         OfflineVideoPlugin.setPlaybackMode(modeValue)
         
-        print("🎯 Playback mode set to: \(mode)")
-        
         resolver([
             "mode": mode,
             "status": "success"
@@ -2381,7 +2126,6 @@ class VideoDownloadManager: NSObject {
         resolver: @escaping RCTPromiseResolveBlock,
         rejecter: @escaping RCTPromiseRejectBlock
     ) {
-        // FIXED: Get mode from OfflineVideoPlugin singleton
         let currentModeValue = OfflineVideoPlugin.getPlaybackMode()
         let currentMode = currentModeValue == 1 ? "offline" : "online"
         
@@ -2392,7 +2136,6 @@ class VideoDownloadManager: NSObject {
 
     private func checkAndRemoveExistingDownload(downloadId: String) {
         if let existingTask = activeDownloads[downloadId] {
-            print("🗑️ Removing existing download entry: \(downloadId)")
             existingTask.cancel()
             activeDownloads.removeValue(forKey: downloadId)
             downloadProgress.removeValue(forKey: downloadId)
@@ -2419,7 +2162,7 @@ extension StreamType {
     }
 }
 
-// MARK: - AVAssetDownloadDelegate (FIXED)
+// MARK: - AVAssetDownloadDelegate
 
 extension VideoDownloadManager: AVAssetDownloadDelegate {
     
@@ -2450,33 +2193,27 @@ extension VideoDownloadManager: AVAssetDownloadDelegate {
         let downloadId = findDownloadId(for: assetDownloadTask)
         guard !downloadId.isEmpty else { return }
         
-        print("📥 Download finished to location: \(location.path)")
-            
         let wasCancelled = assetDownloadTask.error != nil ||
             (assetDownloadTask.error as NSError?)?.code == NSURLErrorCancelled ||
             UserDefaults.standard.bool(forKey: "cancelled_\(downloadId)")
             
         if wasCancelled {
-            print("⏭️ Download cancelled/failed - saving partial: \(downloadId)")
             UserDefaults.standard.removeObject(forKey: "cancelled_\(downloadId)")
                 
             savePartialDownload(downloadId: downloadId, location: location, options: assetDownloadTask.options )
             return
         }
         
-        print("✅ Download completed: \(downloadId) at \(location.path)")
         
         let actualFileSize = getFileSize(at: location)
         let totalBytes = getTotalBytes(downloadId: downloadId)
         
-        print("📝 Attempting to register download: \(downloadId)")
         
-        // Register download SYNCHRONOUSLY
+        // Register download
         offlineRegistry.registerDownload(downloadId: downloadId, localUrl: location) { [weak self] success in
             guard let self = self else { return }
             
             if success {
-                print("✅ Successfully registered download: \(downloadId)")
                 
                 self.removePersistedTask(downloadId: downloadId)
                 self.removePartialDownload(downloadId: downloadId)
@@ -2490,7 +2227,6 @@ extension VideoDownloadManager: AVAssetDownloadDelegate {
                 )
                 
                 guard isJavascriptLoaded else {
-                    print("⏳ Waiting for JS to load before emitting")
                     return
                 }
                 // Emit completion event
@@ -2513,7 +2249,7 @@ extension VideoDownloadManager: AVAssetDownloadDelegate {
                 self.downloadProgress.removeValue(forKey: downloadId)
                 
             } else {
-                print("❌ Failed to register download: \(downloadId)")
+                print("Failed to register download: \(downloadId)")
             }
         }
     }
@@ -2524,12 +2260,9 @@ extension VideoDownloadManager: AVAssetDownloadDelegate {
         guard !downloadId.isEmpty else { return }
         
         if let error = error {
-            print("❌ Download error for \(downloadId): \(error.localizedDescription)")
-            
             stopProgressReporting(for: downloadId)
             
             guard isJavascriptLoaded else {
-                print("⏳ Waiting for JS to load before emitting")
                 return
             }
             
@@ -2585,12 +2318,9 @@ extension VideoDownloadManager: AVAssetDownloadDelegate {
         let estimatedBytes = calculateEstimatedBytes(downloadId: downloadId, progress: percentComplete)
         let totalBytes = getTotalBytes(downloadId: downloadId)
         
-        print("📊 Download progress: \(downloadId) = \(Int(percentComplete))%")
-        
         updateProgressInfo(downloadId: downloadId, progress: percentComplete, downloadedBytes: estimatedBytes)
         
         guard isJavascriptLoaded else {
-            print("⏳ Waiting for JS to load before emitting")
             return
         }
         
@@ -2627,7 +2357,6 @@ extension VideoDownloadManager: AVAssetDownloadDelegate {
             }
         }
         
-        print("⚠️ Could not find downloadId for task: \(task.taskIdentifier)")
         return ""
     }
 

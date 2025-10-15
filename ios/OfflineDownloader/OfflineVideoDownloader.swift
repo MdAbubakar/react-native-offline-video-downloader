@@ -13,19 +13,15 @@ class OfflineVideoDownloader: RCTEventEmitter {
         super.init()
         
         if let existingManager = VideoDownloadManager.getSharedInstance() {
-            print("✅ Reusing existing VideoDownloadManager (hot reload)")
             videoDownloadManager = existingManager
             videoDownloadManager.eventEmitter = self
         } else {
-            print("✅ Creating new VideoDownloadManager")
             videoDownloadManager = VideoDownloadManager()
             videoDownloadManager.eventEmitter = self
             VideoDownloadManager.setSharedInstance(videoDownloadManager)
         }
         
         OfflineVideoDownloader.sharedInstance = self
-        
-        print("✅ OfflineVideoDownloader initialized with AppDelegate integration")
     }
     
     @objc static func getDownloadManagerInstance() -> VideoDownloadManager? {

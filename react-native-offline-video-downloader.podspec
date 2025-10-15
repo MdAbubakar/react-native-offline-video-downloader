@@ -20,9 +20,9 @@ Pod::Spec.new do |s|
 
   # React Native Video dependency
   s.dependency "react-native-video"
-  s.dependency "MMKV", "2.0.2"
+  # MMKV dependency
+  s.dependency "MMKV", "2.2.4"
 
-  # Use install_modules_dependencies helper if React Native >= 0.71.0
   if respond_to?(:install_modules_dependencies, true)
     install_modules_dependencies(s)
   else

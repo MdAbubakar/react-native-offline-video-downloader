@@ -41,7 +41,6 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
                 if (!cacheCheckExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
                     cacheCheckExecutor.shutdownNow()
                 }
-                Log.d(TAG, "✅ Cache executor cleaned up")
             } catch (e: Exception) {
                 Log.w(TAG, "Warning: Error shutting down executor: ${e.message}")
             }
@@ -55,8 +54,7 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
                 playbackMode = mode
 
                 try {
-                    pluginInstance.contentDownloadCache.clear()  // ✅ Use pre-obtained instance
-                    Log.d(TAG, "🎯 Playback mode changed: $oldMode → $mode")
+                    pluginInstance.contentDownloadCache.clear()
                 } catch (e: Exception) {
                     Log.w(TAG, "Warning: Error clearing cache during mode change: ${e.message}")
                 }
@@ -73,42 +71,34 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
         }
     }
 
-    // ✅ ENHANCED: Better cache management
     private val contentDownloadCache = ConcurrentHashMap<String, Boolean>()
     private val cacheTimeout = 2000L
     private var lastCacheCleanup = 0L
-    private val cacheCleanupInterval = 300000L // 5 minutes
+    private val cacheCleanupInterval = 300000L
 
     init {
         try {
             ReactNativeVideoManager.getInstance().registerPlugin(this)
-            Log.d(TAG, "✅ OfflineVideoPlugin registered successfully with ReactNativeVideoManager")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Failed to register plugin: ${e.message}")
+            Log.e(TAG, "Failed to register plugin: ${e.message}")
         }
     }
 
     override fun onInstanceCreated(id: String, player: ExoPlayer) {
         OfflineVideoRegistry.registerPlayer(player)
-        Log.d(TAG, "📱 ExoPlayer instance created: $id")
     }
 
     override fun onInstanceRemoved(id: String, player: ExoPlayer) {
         OfflineVideoRegistry.unregisterPlayer(player)
-        Log.d(TAG, "📱 ExoPlayer instance removed: $id")
     }
 
-    // ✅ NEW: Remove only specific download from plugin cache
     fun removeDownloadFromCache(downloadId: String) {
         synchronized(this) {
             try {
-                Log.d(TAG, "🧹 Removing $downloadId from plugin cache")
 
-                // ✅ FIXED: Only remove entries related to this download
                 val keysToRemove = mutableListOf<String>()
 
                 contentDownloadCache.keys.forEach { uri ->
-                    // Check if URI is related to this download
                     if (isUriRelatedToDownload(uri, downloadId)) {
                         keysToRemove.add(uri)
                     }
@@ -116,18 +106,13 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
 
                 keysToRemove.forEach { key ->
                     contentDownloadCache.remove(key)
-                    Log.d(TAG, "🗑️ Removed plugin cache key: $key")
                 }
-
-                Log.d(TAG, "✅ Removed ${keysToRemove.size} plugin cache entries for: $downloadId")
-
             } catch (e: Exception) {
                 Log.w(TAG, "Error removing download from plugin cache: ${e.message}")
             }
         }
     }
 
-    // ✅ NEW: Check if URI is related to a specific download
     private fun isUriRelatedToDownload(uri: String, downloadId: String): Boolean {
         return try {
             // Direct match
@@ -150,19 +135,13 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
         }
     }
 
-    // ✅ NEW: Extract content ID from URI or download ID
     private fun extractContentId(identifier: String): String {
         return try {
-            // For your URLs like: etvwin-s3.akamaized.net/6782084dc7036a0cfa096af2/HD_playlist.m3u8
             val regex = Regex("([a-f0-9]{24})")
             val match = regex.find(identifier)
             val contentId = match?.value ?: ""
-            if (contentId.isNotEmpty()) {
-                Log.d(TAG, "🔍 Extracted content ID '$contentId' from: $identifier")
-            }
             contentId
         } catch (e: Exception) {
-            Log.w(TAG, "Could not extract content ID from: $identifier")
             ""
         }
     }
@@ -178,55 +157,41 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
                 return null
             }
 
-            Log.d(TAG, "🔍 Checking DataSource override for: $uri")
-            Log.d(TAG, "🎯 Playback mode: $playbackMode")
-
-            // ✅ FIXED: Respect playback mode
             when (playbackMode) {
                 PlaybackMode.ONLINE -> {
-                    // ✅ ONLINE: Never override, always use default (fast)
-                    Log.d(TAG, "🌐 ONLINE mode - using default DataSource for: $uri")
                     return null
                 }
 
                 PlaybackMode.OFFLINE -> {
-                    // ✅ OFFLINE: Only override if content is cached
                     val isCached = isContentCached(uri)
                     if (isCached) {
-                        Log.d(TAG, "📱 OFFLINE mode - using cached DataSource for: $uri")
                         val headers = extractHeadersFromSource(source)
                         return OfflineVideoRegistry.createCacheAwareDataSourceFactory(headers)
                     } else {
-                        Log.w(TAG, "⚠️ OFFLINE mode - content not cached, using default: $uri")
                         return null
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error in overrideMediaDataSourceFactory: ${e.message}")
             null
         }
     }
 
-    // ✅ Helper method
     private fun isContentCached(uri: String): Boolean {
         return try {
             // Check in-memory cache first
             contentDownloadCache[uri]?.let { return it }
 
-            // ✅ Quick check with timeout
             val startTime = System.currentTimeMillis()
             val isCached = checkCacheWithTimeout(uri)
             val duration = System.currentTimeMillis() - startTime
 
-            Log.d(TAG, "💾 Cache check took ${duration}ms for: $uri")
 
             // Cache result to avoid future checks
             contentDownloadCache[uri] = isCached
             isCached
 
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Quick cache check failed: ${e.message}")
             false
         }
     }
@@ -235,16 +200,13 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
         return try {
             val context = OfflineVideoRegistry.getAppContext()
             if (context == null) {
-                Log.w(TAG, "⚠️ App context is null, cannot check cache")
                 return false
             }
 
             if (!OfflineVideoRegistry.isInitialized()) {
-                Log.w(TAG, "⚠️ Registry not initialized")
                 return false
             }
 
-            // ✅ Use timeout to prevent ANR
             val future = cacheCheckExecutor.submit<Boolean> {
                 try {
                     OfflineDataSourceProvider.getInstance(context).isContentCached(uri)
@@ -257,10 +219,8 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
             future.get(1000L, TimeUnit.MILLISECONDS)
 
         } catch (e: TimeoutException) {
-            Log.w(TAG, "⏰ Cache check timed out for: $uri")
             false
         } catch (e: Exception) {
-            Log.w(TAG, "❌ Cache check failed: ${e.message}")
             false
         }
     }
@@ -273,37 +233,27 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
             val uri = source.uri?.toString()
             if (uri == null) return null
 
-            Log.d(TAG, "🔍 Checking MediaItem override for: $uri")
-            Log.d(TAG, "🎯 MediaItem playback mode: $playbackMode")
-
-            // ✅ FIXED: Use same playback mode logic as DataSource override
             when (playbackMode) {
                 PlaybackMode.ONLINE -> {
-                    // ✅ ONLINE: Never override MediaItem (fast)
-                    Log.d(TAG, "🌐 ONLINE mode - using default MediaItem for: $uri")
                     return null
                 }
 
                 PlaybackMode.OFFLINE -> {
-                    // ✅ OFFLINE: Only override if content is cached
+                    // OFFLINE: Only override if content is cached
                     val isCached = isContentCached(uri)
                     if (isCached) {
-                        Log.d(TAG, "📱 OFFLINE mode - using cached MediaItem for: $uri")
 
                         val streamKeys = getStreamKeys(uri)
                         if (streamKeys.isNotEmpty()) {
-                            Log.d(TAG, "🔑 Setting ${streamKeys.size} stream keys")
                             mediaItemBuilder.setStreamKeys(streamKeys)
                         }
                         return mediaItemBuilder
                     } else {
-                        Log.w(TAG, "⚠️ OFFLINE mode - content not cached, using default: $uri")
                         return null
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error in overrideMediaItemBuilder: ${e.message}")
             null
         }
     }
@@ -320,7 +270,6 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
         return null
     }
 
-    // ✅ FIXED: Use SAME logic as OfflineDataSourceProvider
     fun isContentDownloaded(uri: String): Boolean {
         return try {
             // Periodic cache cleanup
@@ -328,28 +277,21 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
             if (currentTime - lastCacheCleanup > cacheCleanupInterval) {
                 contentDownloadCache.clear()
                 lastCacheCleanup = currentTime
-                Log.d(TAG, "🧹 Cleaned up content cache")
             }
 
             // Check cache first
             contentDownloadCache[uri]?.let {
-                Log.d(TAG, "📋 Cache hit for $uri: $it")
                 return it
             }
 
-            // ✅ CRITICAL FIX: Force cache refresh by calling data source provider directly
             val isDownloaded = OfflineVideoRegistry.getAppContext()?.let { context ->
-                Log.d(TAG, "🔄 Force checking cache via DataSourceProvider for: $uri")
                 OfflineDataSourceProvider.getInstance(context).isContentCached(uri)
             } ?: false
 
-            // ✅ Update cache with correct result
             contentDownloadCache[uri] = isDownloaded
-            Log.d(TAG, "💾 Content $uri is downloaded: $isDownloaded (updated cache)")
 
             isDownloaded
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error checking if content is downloaded: ${e.message}")
             false
         }
     }
@@ -359,7 +301,6 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
             val headersMap = mutableMapOf<String, String>()
 
             try {
-                // ✅ More defensive reflection
                 val headersField = source.javaClass.getDeclaredField("headers")
                 if (headersField != null) {
                     headersField.isAccessible = true
@@ -368,7 +309,6 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
                     headers?.let {
                         if (it.isNotEmpty()) {
                             headersMap.putAll(it)
-                            Log.d(TAG, "📋 Extracted ${it.size} headers from source")
                         }
                     }
                 }
@@ -394,7 +334,6 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
             val context = OfflineVideoRegistry.getAppContext() ?: return emptyList()
             val downloadManager = OfflineVideoDownloaderModule.getDownloadManager() ?: return emptyList()
 
-            // ✅ Use timeout to prevent ANR
             val future = cacheCheckExecutor.submit<List<StreamKey>> {
                 val downloadsCursor = downloadManager.downloadIndex.getDownloads()
                 var streamKeys = emptyList<StreamKey>()
@@ -415,14 +354,11 @@ class OfflineVideoPlugin : RNVExoplayerPlugin {
                 streamKeys
             }
 
-            // ✅ Wait max 500ms for stream keys
             future.get(500L, TimeUnit.MILLISECONDS)
 
         } catch (e: TimeoutException) {
-            Log.w(TAG, "⏰ Stream keys retrieval timed out for: $uri")
             emptyList()
         } catch (e: Exception) {
-            Log.w(TAG, "❌ Stream keys retrieval failed: ${e.message}")
             emptyList()
         }
     }

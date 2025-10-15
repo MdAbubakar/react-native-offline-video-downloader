@@ -1,4 +1,3 @@
-// src/OfflineVideoDownloader.ts
 import {
   NativeModules,
   DeviceEventEmitter,
@@ -40,8 +39,6 @@ export class OfflineDownloader {
     new Map();
   private static globalListeners: EmitterSubscription[] = [];
 
-  // ===== TRACK INFORMATION =====
-
   /**
    * Get available video and audio tracks with size information
    */
@@ -55,12 +52,9 @@ export class OfflineDownloader {
         options
       );
     } catch (error) {
-      console.error("Get available tracks failed:", error);
       throw error;
     }
   }
-
-  // ===== STORAGE MANAGEMENT =====
 
   /**
    *  Check available storage space in 15GB cache
@@ -69,7 +63,6 @@ export class OfflineDownloader {
     try {
       return await OfflineVideoDownloader.checkStorageSpace();
     } catch (error) {
-      console.error("Check storage space failed:", error);
       throw error;
     }
   }
@@ -85,12 +78,9 @@ export class OfflineDownloader {
         estimatedSizeBytes
       );
     } catch (error) {
-      console.error("Can download content check failed:", error);
       throw error;
     }
   }
-
-  // ===== DOWNLOAD MANAGEMENT =====
 
   /**
    * Download video with specific quality and Dolby Atmos preference
@@ -113,12 +103,9 @@ export class OfflineDownloader {
         options
       );
     } catch (error) {
-      console.error("Download video failed:", error);
       throw error;
     }
   }
-
-  // ===== DOWNLOAD CONTROL =====
 
   /**
    * Pause a specific download
@@ -127,7 +114,6 @@ export class OfflineDownloader {
     try {
       return await OfflineVideoDownloader.pauseDownload(downloadId);
     } catch (error) {
-      console.error("Pause download failed:", error);
       throw error;
     }
   }
@@ -139,7 +125,6 @@ export class OfflineDownloader {
     try {
       return await OfflineVideoDownloader.resumeDownload(downloadId);
     } catch (error) {
-      console.error("Resume download failed:", error);
       throw error;
     }
   }
@@ -151,14 +136,12 @@ export class OfflineDownloader {
     try {
       return await OfflineVideoDownloader.cancelDownload(downloadId);
     } catch (error) {
-      console.error("Cancel download failed:", error);
       throw error;
     }
   }
 
   /**
    * Delete all downloads with progress tracking
-   * Uses existing deleteDownload() - no native changes needed!
    */
   static async deleteAllDownloads(
     onProgress?: (progress: {
@@ -175,12 +158,8 @@ export class OfflineDownloader {
     message: string;
   }> {
     try {
-      console.log("🗑️ Deleting ALL downloads...");
-
       const allDownloads = await this.getAllDownloads();
       const total = allDownloads.length;
-
-      console.log(`📊 Found ${total} downloads to delete`);
 
       if (total === 0) {
         return {
@@ -210,12 +189,8 @@ export class OfflineDownloader {
 
         try {
           await this.cancelDownload(download.downloadId);
-          console.log(
-            `✅ Deleted (${current}/${total}): ${download.downloadId}`
-          );
           deletedCount++;
         } catch (error) {
-          console.error(`❌ Failed to delete ${download.downloadId}:`, error);
           failedCount++;
           errors.push({
             downloadId: download.downloadId,
@@ -223,11 +198,6 @@ export class OfflineDownloader {
           });
         }
       }
-
-      console.log(
-        `✅ Deletion complete: ${deletedCount} deleted, ${failedCount} failed`
-      );
-
       return {
         success: failedCount === 0,
         deletedCount,
@@ -236,12 +206,9 @@ export class OfflineDownloader {
         message: `Deleted ${deletedCount} of ${total} downloads`,
       };
     } catch (error) {
-      console.error("❌ Failed to delete all downloads:", error);
       throw error;
     }
   }
-
-  // ===== STATUS & PROGRESS =====
 
   /**
    * Check if content is downloaded
@@ -250,7 +217,6 @@ export class OfflineDownloader {
     try {
       return await OfflineVideoDownloader.isDownloaded(downloadId);
     } catch (error) {
-      console.error("Check download status failed:", error);
       return false;
     }
   }
@@ -262,7 +228,6 @@ export class OfflineDownloader {
     try {
       return await OfflineVideoDownloader.getDownloadStatus(downloadId);
     } catch (error) {
-      console.error("Get download status failed:", error);
       throw error;
     }
   }
@@ -274,7 +239,6 @@ export class OfflineDownloader {
     try {
       return await OfflineVideoDownloader.getAllDownloads();
     } catch (error) {
-      console.error("Get all downloads failed:", error);
       throw error;
     }
   }
@@ -291,46 +255,35 @@ export class OfflineDownloader {
       );
       return result.uri;
     } catch (error) {
-      console.error("Get offline playback URI failed:", error);
       return null;
     }
   }
 
   /**
-   * CRITICAL: Validate that downloaded content is still cached
+   * Validate that downloaded content is still cached
    * This prevents the network error you experienced after deleting other downloads
    */
   static async isDownloadCached(downloadId: string): Promise<boolean> {
     try {
       const result = await OfflineVideoDownloader.isDownloadCached(downloadId);
-      console.log(`🔍 Cache validation for ${downloadId}: ${result}`);
       return result;
     } catch (error) {
-      console.error("Cache validation failed:", error);
       return false;
     }
   }
 
-  // ===== DOWNLOAD RESTORATION & SYNC =====
-
   /**
-   * ✅ Sync download progress - restores pending downloads on app start
+   * Sync download progress - restores pending downloads on app start
    * This triggers iOS's restorePendingDownloads() and checkForOrphanedDownloads()
    * Call this when your app starts to restore download state
    */
   static async syncDownloadProgress(): Promise<SyncProgressResult> {
     try {
-      console.log("🔄 Syncing download progress with native...");
-
       if (Platform.OS === "ios") {
         // iOS: Triggers restorePendingDownloads() + resumePartialDownloads() + checkForOrphanedDownloads()
         const result = await OfflineVideoDownloader.syncDownloadProgress();
-        console.log(
-          `✅ iOS sync complete: ${result.totalDownloads} total, ${result.restoredDownloads} restored`
-        );
         return result;
       } else {
-        // Android: ExoPlayer auto-restores everything, just get current state
         const allDownloads = await this.getAllDownloads();
         const activeDownloads = allDownloads.filter(
           (d) => d.state === "downloading" || d.state === "queued"
@@ -339,36 +292,28 @@ export class OfflineDownloader {
           (d) => d.state === "completed"
         );
 
-        console.log(
-          `✅ Android state: ${allDownloads.length} total (ExoPlayer auto-restored)`
-        );
-
         return {
           totalDownloads: allDownloads.length,
           activeDownloads: activeDownloads.length,
           completedDownloads: completedDownloads.length,
-          incompleteDownloads: 0, // Android doesn't have incomplete concept
-          restoredDownloads: 0, // Android auto-restores, not counted
+          incompleteDownloads: 0,
+          restoredDownloads: 0,
           downloads: allDownloads,
         };
       }
     } catch (error) {
-      console.error("Sync download progress failed:", error);
       throw error;
     }
   }
 
   /**
-   * ✅ iOS: Restart an incomplete download (downloads interrupted and not auto-resumed)
-   * ❌ Android: Not needed (ExoPlayer auto-resumes all downloads)
+   * iOS: Restart an incomplete download (downloads interrupted and not auto-resumed)
+   * Android: Not needed (ExoPlayer auto-resumes all downloads)
    */
   static async restartIncompleteDownload(
     downloadId: string
   ): Promise<RestartResult> {
     if (Platform.OS !== "ios") {
-      console.log(
-        `ℹ️ restartIncompleteDownload() not needed on Android (ExoPlayer auto-resumes)`
-      );
       return {
         success: false,
         downloadId,
@@ -378,34 +323,29 @@ export class OfflineDownloader {
     }
 
     try {
-      console.log(`🔄 Restarting incomplete download: ${downloadId}`);
       const result = await OfflineVideoDownloader.restartIncompleteDownload(
         downloadId
       );
-      console.log(`✅ Restart result: ${result.message}`);
       return result;
     } catch (error) {
-      console.error("Restart incomplete download failed:", error);
       throw error;
     }
   }
 
   /**
-   * ✅ iOS: Get all incomplete downloads that need to be restarted
-   * ✅ Android: Returns empty array (ExoPlayer auto-handles everything)
+   * iOS: Get all incomplete downloads that need to be restarted
+   * Android: Returns empty array (ExoPlayer auto-handles everything)
    */
   static async getIncompleteDownloads(): Promise<DownloadInfo[]> {
     try {
       const allDownloads = await this.getAllDownloads();
 
       if (Platform.OS === "ios") {
-        // iOS: Filter for stopped/failed downloads that need manual restart
         return allDownloads.filter(
           (download) =>
             download.state === "stopped" || download.state === "failed"
         );
       } else {
-        // Android: ExoPlayer auto-resumes, no incomplete concept
         return [];
       }
     } catch (error) {
@@ -415,7 +355,7 @@ export class OfflineDownloader {
   }
 
   /**
-   * ✅ Comprehensive download restoration on app start
+   * Comprehensive download restoration on app start
    * This is the ONE method you should call when your app starts
    *
    * iOS: Syncs pending downloads, resumes partials, checks for orphans
@@ -427,21 +367,11 @@ export class OfflineDownloader {
     needsRestart: number;
   }> {
     try {
-      console.log(`🚀 Starting download restoration (${Platform.OS})...`);
-
-      // 1. Sync with native to restore pending downloads
+      // Sync with native to restore pending downloads
       const synced = await this.syncDownloadProgress();
 
-      // 2. Get incomplete downloads (iOS only)
+      // Get incomplete downloads (iOS only)
       const incomplete = await this.getIncompleteDownloads();
-
-      console.log(`📊 Restoration complete:`);
-      console.log(`   - Platform: ${Platform.OS}`);
-      console.log(`   - Total downloads: ${synced.totalDownloads}`);
-      console.log(`   - Active: ${synced.activeDownloads}`);
-      console.log(`   - Completed: ${synced.completedDownloads}`);
-      console.log(`   - Incomplete: ${incomplete.length}`);
-      console.log(`   - Restored: ${synced.restoredDownloads}`);
 
       return {
         synced,
@@ -449,7 +379,6 @@ export class OfflineDownloader {
         needsRestart: incomplete.length,
       };
     } catch (error) {
-      console.error("Restore downloads failed:", error);
       throw error;
     }
   }
@@ -467,7 +396,6 @@ export class OfflineDownloader {
     results: RestartResult[];
   }> {
     if (Platform.OS !== "ios") {
-      console.log(`ℹ️ autoRestartIncompleteDownloads() not needed on Android`);
       return {
         attempted: 0,
         succeeded: 0,
@@ -487,10 +415,6 @@ export class OfflineDownloader {
           results: [],
         };
       }
-
-      console.log(
-        `🔄 Auto-restarting ${incomplete.length} incomplete downloads...`
-      );
 
       const results: RestartResult[] = [];
       let succeeded = 0;
@@ -519,10 +443,6 @@ export class OfflineDownloader {
         }
       }
 
-      console.log(
-        `✅ Auto-restart complete: ${succeeded} succeeded, ${failed} failed`
-      );
-
       return {
         attempted: incomplete.length,
         succeeded,
@@ -530,12 +450,9 @@ export class OfflineDownloader {
         results,
       };
     } catch (error) {
-      console.error("Auto-restart incomplete downloads failed:", error);
       throw error;
     }
   }
-
-  // ===== PLAYBACK MODE CONTROL =====
 
   /**
    * Set playback mode for downloaded content
@@ -547,10 +464,8 @@ export class OfflineDownloader {
   ): Promise<PlaybackModeResult> {
     try {
       const result = await OfflineVideoDownloader.setPlaybackMode(mode);
-      console.log(`🎯 Playback mode set to: ${mode}`);
       return result;
     } catch (error) {
-      console.error("Set playback mode failed:", error);
       throw error;
     }
   }
@@ -564,7 +479,6 @@ export class OfflineDownloader {
       const result = await OfflineVideoDownloader.getPlaybackMode();
       return result.mode;
     } catch (error) {
-      console.error("Get playback mode failed:", error);
       throw error;
     }
   }
@@ -584,8 +498,6 @@ export class OfflineDownloader {
   static async setOnlineMode(): Promise<PlaybackModeResult> {
     return this.setPlaybackMode("online");
   }
-
-  // ===== EVENT LISTENERS =====
 
   /**
    * Listen for download progress updates
@@ -644,8 +556,6 @@ export class OfflineDownloader {
     this.globalListeners.forEach((listener) => listener.remove());
     this.globalListeners.length = 0;
   }
-
-  // ===== UTILITY METHODS =====
 
   /**
    * Format bytes to human readable format

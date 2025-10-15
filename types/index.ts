@@ -1,12 +1,11 @@
-// types/index.ts
 export interface VideoTrack {
   height: number;
   width: number;
   bitrate: number;
   size: number; // Size in bytes
-  formattedSize: string; // Human readable size (e.g., "125.5 MB")
+  formattedSize: string;
   quality: string;
-  trackId?: string; // Optional track identifier
+  trackId?: string;
 }
 
 export interface AudioTrack {
@@ -20,14 +19,14 @@ export interface AudioTrack {
     | "surround"
     | "stereo";
   isDolbyAtmos: boolean;
-  size: number; // Size in bytes
-  formattedSize: string; // Human readable size
+  size: number;
+  formattedSize: string;
 }
 
 export interface AvailableTracksResult {
   videoTracks: VideoTrack[];
   audioTracks: AudioTrack[];
-  duration: number; // Total duration in seconds
+  duration: number;
 }
 
 export interface DownloadOptions {
@@ -57,9 +56,9 @@ export interface DownloadProgressEvent {
 
 export interface DownloadStatus {
   downloadId: string;
-  uri?: string; // Available if download is completed
+  uri?: string;
   state: DownloadState;
-  progress: number; // 0-100
+  progress: number;
   bytesDownloaded: number;
   totalBytes: number;
   formattedDownloaded: string;
@@ -70,10 +69,10 @@ export interface DownloadStatus {
 export interface DownloadInfo {
   downloadId: string;
   state: DownloadState;
-  progress: number; // 0-100
+  progress: number;
   bytesDownloaded: number;
   formattedDownloaded: string;
-  uri?: string; // Only available for completed downloads
+  uri?: string;
 }
 
 export interface OfflinePlaybackResult {
@@ -87,7 +86,7 @@ export interface DownloadResult {
   state: "queued";
   dolbyAtmosPreferred?: boolean;
   streamKeysCount?: number;
-  expectedSize?: number; // in bytes
+  expectedSize?: number;
 }
 
 export interface StorageInfo {
@@ -136,21 +135,20 @@ export interface RestartResult {
   message: string;
 }
 
-// Native module interface that matches your Kotlin methods
+// Native module interface
 export interface NativeOfflineVideoDownloader {
-  // New simplified API methods
   downloadStream(
     masterUrl: string,
     downloadId: string,
     selectedHeight: number,
     selectedWidth: number,
     preferDolbyAtmos: boolean,
-    options?: DownloadOptions,
+    options?: DownloadOptions
   ): Promise<DownloadResult>;
 
   getAvailableTracks(
     masterUrl: string,
-    options?: DownloadOptions,
+    options?: DownloadOptions
   ): Promise<AvailableTracksResult>;
 
   getOfflinePlaybackUri(downloadId: string): Promise<OfflinePlaybackResult>;
@@ -172,6 +170,6 @@ export interface NativeOfflineVideoDownloader {
   getPlaybackMode(): Promise<PlaybackModeResult>;
   checkStorageSpace(): Promise<StorageInfo>;
   canDownloadContent(
-    estimatedSizeBytes: number,
+    estimatedSizeBytes: number
   ): Promise<DownloadCapabilityCheck>;
 }

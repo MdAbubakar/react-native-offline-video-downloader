@@ -44,7 +44,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
 
     private val cachedSizes = mutableMapOf<String, Long>()
 
-    // ✅ Store track identifiers for precise selection
     private val storedTrackIdentifiers = mutableMapOf<String, Map<Int, TrackIdentifier>>()
 
     data class PlaylistUrls(
@@ -80,7 +79,7 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
 
     override fun getName(): String = MODULE_NAME
 
-    // ✅ Track identifier data class
+    // Track identifier data class
     data class TrackIdentifier(
         val periodIndex: Int,
         val groupIndex: Int,
@@ -103,12 +102,12 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         val codecs: String? = format.codecs,
         val mimeType: String? = format.sampleMimeType
     ) {
-        // ✅ Helper method for logging
+        // Helper method for logging
         override fun toString(): String {
             return "TrackInfo(${width}x${height}, ${bitrate}bps, $mimeType, ${formatBytes(actualSizeBytes)})"
         }
 
-        // ✅ Helper to format bytes
+        // Helper to format bytes
         @SuppressLint("DefaultLocale")
         private fun formatBytes(bytes: Long): String {
             if (bytes < 1024) return "$bytes B"
@@ -150,11 +149,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         }
 
         setDownloadManager(downloadManager)
-        Log.d(MODULE_NAME, "✅ DownloadManager initialized successfully")
-        Log.d(MODULE_NAME, "✅ DownloadManager initialized successfully")
-        Log.d(MODULE_NAME, "📂 Cache directory: ${VideoCache.getCacheDirectoryPath(context)}")
-        Log.d(MODULE_NAME, "📂 Downloads directory: ${downloadDirectory.absolutePath}")
-        Log.d(MODULE_NAME, "🛡️ Storage is PROTECTED (data directory)")
     }
 
     fun cleanup() {
@@ -167,9 +161,8 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
             _downloadManager?.release()
             setDownloadManager(null)
             VideoCache.release()
-            Log.d(MODULE_NAME, "✅ All downloader resources cleaned up.")
         } catch (e: Exception) {
-            Log.e(MODULE_NAME, "❌ Error during cleanup: ${e.message}")
+            Log.e(MODULE_NAME, "Error during cleanup: ${e.message}")
         }
     }
 
@@ -196,13 +189,10 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                 downloadHelper.prepare(object : DownloadHelper.Callback {
                     override fun onPrepared(helper: DownloadHelper, tracksInfoAvailable: Boolean) {
                         try {
-                            // ✅ Detect stream type first
+                            // Detect stream type first
                             val streamType = detectStreamType(helper)
-                            Log.d(MODULE_NAME, "🔍 Detected stream type: $streamType")
 
-                            // ✅ FIXED: Define allowed qualities only
                             val allowedQualities = setOf(480, 720, 1080)
-                            Log.d(MODULE_NAME, "🎯 Filtering for allowed qualities: $allowedQualities")
 
                             val videoTrackMap = mutableMapOf<Int, WritableMap>()
                             val videoBitrateMap = mutableMapOf<Int, Int>()
@@ -230,9 +220,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                                                 for (trackIndex in 0 until group.length) {
                                                     val format = group.getFormat(trackIndex)
 
-                                                    Log.d(MODULE_NAME, "🔍 Found video track: ${format.height}p, ${format.bitrate} bps, G${groupIndex}T${trackIndex}")
-
-                                                    // ✅ CRITICAL: First filter by allowed qualities
                                                     if (format.height in allowedQualities && format.bitrate > 0) {
                                                         // I-FRAME filtering
                                                         val isIFrameStream = format.roleFlags and C.ROLE_FLAG_TRICK_PLAY != 0 ||
@@ -248,7 +235,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                                                             if (existingBitrate == null || currentBitrate > existingBitrate) {
                                                                 videoBitrateMap[format.height] = currentBitrate
 
-                                                                // ✅ SMART: Use appropriate calculation based on stream type
                                                                 val estimatedSizeBytes = if (totalDurationSec > 0) {
                                                                     runBlocking {
                                                                         calculateAccurateStreamSize(
@@ -277,27 +263,24 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                                                                     putDouble("size", estimatedSizeBytes.toDouble())
                                                                     putString("formattedSize", formatBytes(estimatedSizeBytes))
                                                                     putString("trackId", "${periodIndex}_${groupIndex}_${trackIndex}")
-                                                                    // ✅ Add quality label for better UX
                                                                     putString("quality", "${format.height}p")
                                                                     putString("streamType", streamType.name)
                                                                 }
                                                                 videoTrackMap[format.height] = trackData
 
                                                                 val sizeType = if (streamType == StreamType.SEPARATE_AUDIO_VIDEO) "video only" else "video+audio"
-                                                                Log.d(MODULE_NAME, "✅ Selected ${format.height}p: ${formatBytes(estimatedSizeBytes)} ($sizeType)")
                                                             }
                                                         } else {
-                                                            Log.d(MODULE_NAME, "🚫 Filtered I-FRAME: ${format.height}p, ${format.bitrate} bps")
+                                                            Log.d(MODULE_NAME, "Filtered I-FRAME: ${format.height}p, ${format.bitrate} bps")
                                                         }
                                                     } else if (format.height !in allowedQualities) {
-                                                        // ✅ Log filtered qualities for debugging
-                                                        Log.d(MODULE_NAME, "⏭️ Skipped ${format.height}p (not in allowed qualities)")
+                                                        Log.d(MODULE_NAME, "Skipped ${format.height}p (not in allowed qualities)")
                                                     }
                                                 }
                                             }
                                         }
 
-                                        // ✅ Audio processing (only for separate audio streams)
+                                        // Audio processing (only for separate audio streams)
                                         if (rendererType == C.TRACK_TYPE_AUDIO && streamType == StreamType.SEPARATE_AUDIO_VIDEO && periodIndex == 0) {
                                             for (groupIndex in 0 until trackGroups.length) {
                                                 val group = trackGroups.get(groupIndex)
@@ -336,7 +319,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                                                     if (currentPriority > existingPriority) {
                                                         audioPriorityMap[language] = currentPriority
                                                         audioTrackMap[language] = audioTrackData
-                                                        Log.d(MODULE_NAME, "📊 Selected audio: ${formatBytes(estimatedSizeBytes)}")
                                                     }
                                                 }
                                             }
@@ -347,35 +329,24 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
 
                             storedTrackIdentifiers[masterUrl] = videoTrackIdentifiers
 
-                            // ✅ ENHANCED: Sort video tracks by quality (highest first) and ensure only allowed qualities
+                            // Sort video tracks by quality (highest first) and ensure only allowed qualities
                             val videoTracks = Arguments.createArray()
-                            val sortedVideoQualities = listOf(1080, 720, 480) // Preferred order
+                            val sortedVideoQualities = listOf(1080, 720, 480)
 
                             sortedVideoQualities.forEach { height ->
                                 videoTrackMap[height]?.let { trackData ->
                                     videoTracks.pushMap(trackData)
-                                    Log.d(MODULE_NAME, "📺 Added ${height}p to final list")
                                 }
                             }
 
                             val audioTracks = Arguments.createArray()
                             audioTrackMap.values.forEach { audioTracks.pushMap(it) }
 
-                            // ✅ ENHANCED: Detailed logging
-                            Log.d(MODULE_NAME, "✅ Final curated qualities: ${videoTrackMap.keys.sorted().joinToString(", ") { "${it}p" }}")
-                            Log.d(MODULE_NAME, "✅ Total: ${videoTrackMap.size} video, ${audioTrackMap.size} audio (${streamType})")
-
-                            // ✅ Validate we have at least one quality
-                            if (videoTrackMap.isEmpty()) {
-                                Log.w(MODULE_NAME, "⚠️ No video tracks match allowed qualities (480p, 720p, 1080p)")
-                            }
-
                             promise.resolve(Arguments.createMap().apply {
                                 putArray("videoTracks", videoTracks)
                                 putArray("audioTracks", audioTracks)
                                 putDouble("duration", totalDurationSec)
                                 putString("streamType", streamType.name)
-                                // ✅ Add metadata for debugging
                                 putArray("allowedQualities", Arguments.createArray().apply {
                                     allowedQualities.forEach { pushInt(it) }
                                 })
@@ -383,7 +354,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                             })
 
                         } catch (e: Exception) {
-                            Log.e(MODULE_NAME, "❌ Error processing tracks: ${e.message}", e)
                             promise.reject("PROCESSING_ERROR", "Failed to process tracks: ${e.message}")
                         } finally {
                             helper.release()
@@ -391,13 +361,11 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                     }
 
                     override fun onPrepareError(helper: DownloadHelper, e: java.io.IOException) {
-                        Log.e(MODULE_NAME, "❌ Prepare error: ${e.message}", e)
                         promise.reject("TRACK_FETCH_ERROR", "Could not get tracks: ${e.message}")
                         helper.release()
                     }
                 })
             } catch (e: Exception) {
-                Log.e(MODULE_NAME, "❌ Setup error: ${e.message}", e)
                 promise.reject("SETUP_ERROR", "Failed to set up track helper: ${e.message}")
             }
         }
@@ -435,26 +403,17 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                 downloadHelper.prepare(object : DownloadHelper.Callback {
                     override fun onPrepared(helper: DownloadHelper, tracksInfoAvailable: Boolean) {
                         try {
-                            // ✅ Detect stream type to decide strategy
                             val streamType = detectStreamType(helper)
-                            Log.d(MODULE_NAME, "🔍 Stream type for download: $streamType")
-
                             val storedTracks = storedTrackIdentifiers[masterUrl]
                             val targetTrack = storedTracks?.get(selectedHeight)
 
                             if (targetTrack != null) {
-                                Log.d(MODULE_NAME, "🎯 Using exact track selection for ${selectedHeight}p")
-
-                                // ✅ Clear all selections first
                                 for (periodIndex in 0 until helper.periodCount) {
                                     helper.clearTrackSelections(periodIndex)
                                 }
 
                                 when (streamType) {
                                     StreamType.SEPARATE_AUDIO_VIDEO -> {
-                                        // ✅ FIXED: Proper separate audio/video handling
-                                        Log.d(MODULE_NAME, "🎯 Configuring separate audio/video download")
-
                                         selectSeparateAudioVideoTracks(
                                             helper,
                                             targetTrack,
@@ -464,41 +423,29 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                                     }
 
                                     StreamType.MUXED_VIDEO_AUDIO -> {
-                                        // ✅ MUXED STREAMS: Select video track (audio is embedded)
-                                        Log.d(MODULE_NAME, "🎯 Configuring muxed audio/video download")
-
                                         selectMuxedVideoTrack(helper, targetTrack, preferDolbyAtmos)
                                     }
 
                                     StreamType.UNKNOWN -> {
-                                        // ✅ FALLBACK: Auto-detect and handle
-                                        Log.d(MODULE_NAME, "🎯 Using fallback strategy for unknown stream type")
-
                                         selectFallbackTracks(helper, targetTrack, preferDolbyAtmos)
                                     }
                                 }
 
                             } else {
-                                // ✅ Fallback selection when no stored tracks
-                                Log.w(MODULE_NAME, "⚠️ Using fallback selection - no stored tracks")
                                 selectFallbackByResolution(helper, selectedWidth, selectedHeight, preferDolbyAtmos)
                             }
 
                             val downloadRequest = helper.getDownloadRequest(downloadId, null)
 
-                            // ✅ Enhanced logging and validation
                             validateDownloadRequest(downloadRequest, streamType)
 
                             DownloadService.sendAddDownload(
                                 context, VideoDownloadService::class.java, downloadRequest, false
                             )
 
-                            Log.d(MODULE_NAME, "📥 Download started for ${downloadRequest.id} with ${downloadRequest.streamKeys.size} stream keys")
-
                             promise.resolve(createDownloadResponse(downloadRequest, streamType, targetTrack))
 
                         } catch (e: Exception) {
-                            Log.e(MODULE_NAME, "❌ Selection error: ${e.message}", e)
                             promise.reject("SELECTION_ERROR", "Failed to select tracks: ${e.message}")
                         } finally {
                             helper.release()
@@ -516,15 +463,11 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         }
     }
 
-    // ✅ NEW: Only remove download entry, not cache
     private fun checkAndRemoveExistingDownload(downloadId: String) {
         try {
-            Log.d(MODULE_NAME, "🔍 Checking for existing download: $downloadId")
-
             _downloadManager?.let { manager ->
                 val existingDownload = manager.downloadIndex.getDownload(downloadId)
                 if (existingDownload != null) {
-                    Log.d(MODULE_NAME, "🗑️ Removing existing download entry (keeping cache)")
                     DownloadService.sendRemoveDownload(
                         reactContext,
                         VideoDownloadService::class.java,
@@ -532,9 +475,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                         false
                     )
                     Thread.sleep(300)
-                    Log.d(MODULE_NAME, "✅ Existing download entry removed")
-                } else {
-                    Log.d(MODULE_NAME, "✅ No existing download found")
                 }
             }
 
@@ -543,7 +483,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         }
     }
 
-    //  FIXED: Select complete rendition set instead of individual tracks
     private fun selectSeparateAudioVideoTracks(
         helper: DownloadHelper,
         targetVideoTrack: TrackIdentifier,
@@ -551,17 +490,12 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         masterUrl: String
     ) {
         try {
-            Log.d(MODULE_NAME, "🎯 Selecting complete rendition set for separate audio/video")
-
-            // ✅ FIXED: Use constraints instead of specific track selection
             val parametersBuilder = DefaultTrackSelector.Parameters.Builder()
-                // ✅ Video constraints based on target track
                 .setMaxVideoSize(targetVideoTrack.format.width, targetVideoTrack.format.height)
                 .setMinVideoSize(targetVideoTrack.format.width, targetVideoTrack.format.height)
-                .setMaxVideoBitrate(targetVideoTrack.format.bitrate + 200000) // Small buffer
+                .setMaxVideoBitrate(targetVideoTrack.format.bitrate + 200000)
                 .setMinVideoBitrate(maxOf(targetVideoTrack.format.bitrate - 200000, 0))
 
-            // ✅ Audio constraints (let ExoPlayer pick matching audio)
             if (preferDolbyAtmos) {
                 parametersBuilder
                     .setPreferredAudioMimeType("audio/eac3-joc")
@@ -577,22 +511,16 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                 .setForceHighestSupportedBitrate(false)
                 .build()
 
-            // ✅ Apply to all periods - let ExoPlayer download the complete set
             for (periodIndex in 0 until helper.periodCount) {
                 helper.clearTrackSelections(periodIndex)
                 helper.addTrackSelection(periodIndex, parameters)
             }
 
-            Log.d(MODULE_NAME, "✅ Applied complete rendition selection for ${targetVideoTrack.format.height}p")
-            Log.d(MODULE_NAME, "✅ ExoPlayer will download matching video + audio renditions")
-
         } catch (e: Exception) {
-            Log.e(MODULE_NAME, "❌ Error selecting complete rendition set: ${e.message}", e)
             throw e
         }
     }
 
-    // ✅ NEW: Select muxed video track (existing logic)
     private fun selectMuxedVideoTrack(
         helper: DownloadHelper,
         targetTrack: TrackIdentifier,
@@ -617,10 +545,8 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         val parameters = parametersBuilder.build()
         helper.addTrackSelection(targetTrack.periodIndex, parameters)
 
-        Log.d(MODULE_NAME, "✅ Applied muxed video selection")
     }
 
-    // ✅ NEW: Fallback track selection
     private fun selectFallbackTracks(
         helper: DownloadHelper,
         targetTrack: TrackIdentifier,
@@ -640,18 +566,14 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         for (periodIndex in 0 until helper.periodCount) {
             helper.addTrackSelection(periodIndex, parameters)
         }
-
-        Log.d(MODULE_NAME, "✅ Applied fallback selection")
     }
 
-    // ✅ ADD: Missing fallback method
     private fun selectFallbackByResolution(
         helper: DownloadHelper,
         selectedWidth: Int,
         selectedHeight: Int,
         preferDolbyAtmos: Boolean
     ) {
-        Log.w(MODULE_NAME, "⚠️ Using resolution-based fallback selection")
 
         val trackSelectorBuilder = DefaultTrackSelector.Parameters.Builder()
             .setForceHighestSupportedBitrate(true)
@@ -669,36 +591,13 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
             helper.clearTrackSelections(periodIndex)
             helper.addTrackSelection(periodIndex, trackSelectorParameters)
         }
-
-        Log.d(MODULE_NAME, "✅ Applied resolution fallback: ${selectedWidth}x${selectedHeight}")
     }
 
-    // ✅ NEW: Validate download request
     private fun validateDownloadRequest(downloadRequest: DownloadRequest, streamType: StreamType) {
-        Log.d(MODULE_NAME, "📥 Download request created:")
-        Log.d(MODULE_NAME, "📥   Stream keys: ${downloadRequest.streamKeys.size}")
-
-        downloadRequest.streamKeys.forEachIndexed { index, streamKey ->
-            Log.d(MODULE_NAME, "📥   Stream $index: P${streamKey.periodIndex}G${streamKey.groupIndex}T${streamKey.streamIndex}")
-        }
-
-        // ✅ FIXED: Complete rendition may have multiple streams
         val expectedMinStreams = when (streamType) {
-            StreamType.SEPARATE_AUDIO_VIDEO -> 2  // At least video + audio
-            StreamType.MUXED_VIDEO_AUDIO -> 1     // Combined track
-            StreamType.UNKNOWN -> 1               // Safe fallback
-        }
-
-        if (downloadRequest.streamKeys.size < expectedMinStreams) {
-            Log.w(MODULE_NAME, "⚠️ Expected at least $expectedMinStreams streams, got ${downloadRequest.streamKeys.size}")
-            Log.w(MODULE_NAME, "⚠️ This might result in incomplete downloads")
-        } else {
-            Log.d(MODULE_NAME, "✅ Got sufficient streams: ${downloadRequest.streamKeys.size} (expected min: $expectedMinStreams)")
-        }
-
-        // ✅ Log detailed stream info
-        downloadRequest.streamKeys.forEach { streamKey ->
-            Log.d(MODULE_NAME, "   Stream: Period=${streamKey.periodIndex}, Group=${streamKey.groupIndex}, Track=${streamKey.streamIndex}")
+            StreamType.SEPARATE_AUDIO_VIDEO -> 2
+            StreamType.MUXED_VIDEO_AUDIO -> 1 
+            StreamType.UNKNOWN -> 1
         }
     }
 
@@ -713,11 +612,10 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
             putInt("streamKeysCount", downloadRequest.streamKeys.size)
             putString("streamType", streamType.name)
 
-            // ✅ FIXED: Don't enforce exact count for complete renditions
             val minExpectedStreams = when (streamType) {
-                StreamType.SEPARATE_AUDIO_VIDEO -> 2  // At least 2
-                StreamType.MUXED_VIDEO_AUDIO -> 1     // Exactly 1
-                StreamType.UNKNOWN -> 1               // At least 1
+                StreamType.SEPARATE_AUDIO_VIDEO -> 2
+                StreamType.MUXED_VIDEO_AUDIO -> 1    
+                StreamType.UNKNOWN -> 1              
             }
 
             putInt("minExpectedStreams", minExpectedStreams)
@@ -735,35 +633,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         }
     }
 
-
-    // Add this to your OfflineVideoDownloaderModule
-    @ReactMethod
-    fun testOfflinePlayback(playbackUrl: String, promise: Promise) {
-        try {
-            val debugInfo = Arguments.createMap()
-            val context = reactApplicationContext
-
-            // Test cache detection
-            val dataSourceProvider = OfflineDataSourceProvider.getInstance(context)
-            val isCached = dataSourceProvider.isContentCached(playbackUrl)
-
-            // Test plugin detection
-            val plugin = OfflineVideoPlugin.getInstance()
-            val isDownloaded = plugin.isContentDownloaded(playbackUrl)
-
-            debugInfo.putString("url", playbackUrl)
-            debugInfo.putBoolean("dataSourceDetection", isCached)
-            debugInfo.putBoolean("pluginDetection", isDownloaded)
-            debugInfo.putBoolean("registryInitialized", OfflineVideoRegistry.isInitialized())
-
-            promise.resolve(debugInfo)
-        } catch (e: Exception) {
-            promise.reject("TEST_ERROR", e.message)
-        }
-    }
-
-
-    // ✅ Smart minimum bitrate calculation based on resolution
     private fun getMinExpectedBitrate(height: Int): Int {
         return when (height) {
             144 -> 100000   // 100 Kbps minimum for 144p
@@ -777,55 +646,42 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         }
     }
 
-    // Detect stream type based on manifest structure
     private fun detectStreamType(helper: DownloadHelper): StreamType {
         try {
             val manifest = helper.manifest as? HlsManifest
             if (manifest != null) {
                 val multivariantPlaylist = manifest.multivariantPlaylist
 
-                // ✅ Check if there are separate audio renditions
                 val hasAudioRenditions = multivariantPlaylist.audios.isNotEmpty()
 
-                // ✅ Check if variants have muxed audio
                 val hasMuxedAudio = multivariantPlaylist.muxedAudioFormat != null
-
-                Log.d(MODULE_NAME, "🔍 Audio renditions count: ${multivariantPlaylist.audios.size}")
-                Log.d(MODULE_NAME, "🔍 Muxed audio format: ${multivariantPlaylist.muxedAudioFormat}")
-                Log.d(MODULE_NAME, "🔍 Variants count: ${multivariantPlaylist.variants.size}")
 
                 return when {
                     hasAudioRenditions -> {
-                        Log.d(MODULE_NAME, "🔍 Found separate audio renditions - SEPARATE streams")
                         StreamType.SEPARATE_AUDIO_VIDEO
                     }
                     hasMuxedAudio -> {
-                        Log.d(MODULE_NAME, "🔍 Found muxed audio format - MUXED streams")
                         StreamType.MUXED_VIDEO_AUDIO
                     }
                     else -> {
-                        // ✅ Additional check: Look at variant codecs
                         val firstVariant = multivariantPlaylist.variants.firstOrNull()
                         val codecs = firstVariant?.format?.codecs
 
                         if (codecs?.contains("mp4a") == true) {
-                            Log.d(MODULE_NAME, "🔍 Variant codecs include audio (${codecs}) - MUXED streams")
                             StreamType.MUXED_VIDEO_AUDIO
                         } else {
-                            Log.d(MODULE_NAME, "🔍 No audio info found - UNKNOWN")
                             StreamType.UNKNOWN
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.w(MODULE_NAME, "⚠️ Could not detect stream type from manifest: ${e.message}")
+            Log.w(MODULE_NAME, "Could not detect stream type from manifest: ${e.message}")
         }
 
         return StreamType.UNKNOWN
     }
 
-    // ✅ ENHANCED: Prefer AVERAGE-BANDWIDTH over BANDWIDTH
     private fun extractBitrateFromManifest(helper: DownloadHelper, format: Format): Int {
         try {
             val manifest = helper.manifest as? HlsManifest
@@ -839,20 +695,17 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                 if (matchingVariant != null) {
                     val averageBandwidth = matchingVariant.format.averageBitrate
                     if (averageBandwidth > 0) {
-                        Log.d(MODULE_NAME, "📊 Using AVERAGE-BANDWIDTH: $averageBandwidth bps (was ${format.bitrate} bps)")
                         return averageBandwidth
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.w(MODULE_NAME, "⚠️ Could not extract average bandwidth: ${e.message}")
+            Log.w(MODULE_NAME, "Could not extract average bandwidth: ${e.message}")
         }
 
-        Log.d(MODULE_NAME, "📊 Using BANDWIDTH: ${format.bitrate} bps")
         return format.bitrate
     }
 
-    // ✅ ENHANCED: Get playlist URLs for segment sampling
     private fun getPlaylistUrls(helper: DownloadHelper, format: Format, streamType: StreamType): PlaylistUrls {
         try {
             val manifest = helper.manifest as? HlsManifest
@@ -873,18 +726,16 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                         audioRendition?.let { resolveUrl(baseUrl, it.url.toString()) }
                     } else null
 
-                    Log.d(MODULE_NAME, "🔍 Playlist URLs - Video: $videoUrl, Audio: $audioUrl")
                     return PlaylistUrls(videoUrl, audioUrl)
                 }
             }
         } catch (e: Exception) {
-            Log.w(MODULE_NAME, "⚠️ Could not extract playlist URLs: ${e.message}")
+            Log.w(MODULE_NAME, "Could not extract playlist URLs: ${e.message}")
         }
 
         return PlaylistUrls("", null)
     }
 
-    // Updated with 5 segments and improved logic
     private suspend fun sampleSegments(
         videoUrl: String,
         audioUrl: String?,
@@ -893,23 +744,18 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
     ): Pair<Long, Long> {
         return withContext(Dispatchers.IO) {
             try {
-                Log.d(MODULE_NAME, "🎯 Sampling $sampleCount segments for accuracy vs speed balance")
-
                 val videoSize = sampleVideoSegments(videoUrl, headers, sampleCount)
                 val audioSize = if (audioUrl != null) {
                     sampleAudioSegments(audioUrl, headers, sampleCount)
                 } else 0L
 
-                Log.d(MODULE_NAME, "🎯 Sampled $sampleCount segments: Video=${formatBytes(videoSize)}, Audio=${formatBytes(audioSize)}")
                 Pair(videoSize, audioSize)
             } catch (e: Exception) {
-                Log.w(MODULE_NAME, "⚠️ Segment sampling failed: ${e.message}")
                 Pair(0L, 0L)
             }
         }
     }
 
-    // ✅ Enhanced distribution for better representation with fewer samples
     private fun distributeIndices(total: Int, sampleCount: Int): List<Int> {
         if (total <= sampleCount) {
             return (0 until total).toList()
@@ -917,10 +763,8 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
 
         val indices = mutableListOf<Int>()
 
-        // ✅ Strategic sampling: beginning, middle, end + distributed
         when (sampleCount) {
             8 -> {
-                // ✅ Optimized 8-segment strategy
                 indices.add(0)                           // Start
                 indices.add((total * 0.125).toInt())     // 12.5%
                 indices.add((total * 0.25).toInt())      // 25%
@@ -931,7 +775,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                 indices.add(total - 1)                   // End
             }
             else -> {
-                // ✅ Fallback: even distribution
                 val step = total.toFloat() / sampleCount
                 for (i in 0 until sampleCount) {
                     val index = (i * step).toInt().coerceIn(0, total - 1)
@@ -943,7 +786,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         return indices.distinct()
     }
 
-    // ✅ Updated main calculation with better defaults
     private suspend fun calculateAccurateStreamSize(
         helper: DownloadHelper,
         format: Format,
@@ -956,57 +798,47 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
 
                 val cacheKey = "${format.height}p_${format.bitrate}_${streamType.name}"
                 cachedSizes[cacheKey]?.let { cachedSize ->
-                    Log.d(MODULE_NAME, "✅ Using cached size for ${format.height}p: ${formatBytes(cachedSize)}")
                     return@withContext cachedSize
                 }
 
                 val allowedQualities = setOf(480, 720, 1080)
                 if (format.height !in allowedQualities) {
-                    Log.d(MODULE_NAME, "⏭️ Skipping sampling for ${format.height}p (not in allowed qualities)")
                     return@withContext 0L
                 }
 
-                // ✅ Step 1: Get AVERAGE-BANDWIDTH
                 val adjustedBitrate = extractBitrateFromManifest(helper, format)
 
-                // ✅ Step 2: Try 5-segment sampling
                 val playlistUrls = getPlaylistUrls(helper, format, streamType)
 
                 if (playlistUrls.videoUrl.isNotEmpty()) {
-                    Log.d(MODULE_NAME, "🎯 Attempting 5-segment sampling for ${format.height}p")
 
                     val (videoSampleSize, audioSampleSize) = sampleSegments(
                         playlistUrls.videoUrl,
                         playlistUrls.audioUrl,
                         headers,
-                        sampleCount = 8  // ✅ Use 5 segments
+                        sampleCount = 8
                     )
 
                     if (videoSampleSize > 0) {
                         val totalSize = videoSampleSize + audioSampleSize
-                        Log.d(MODULE_NAME, "🎯 Using 5-segment sampling: ${formatBytes(totalSize)}")
                         cachedSizes[cacheKey] = totalSize
                         return@withContext totalSize
                     }
                 }
 
-                // ✅ Fallback to AVERAGE-BANDWIDTH
                 val calculatedSize = when (streamType) {
                     StreamType.SEPARATE_AUDIO_VIDEO -> calculateVideoOnlySize(adjustedBitrate, durationSec)
                     StreamType.MUXED_VIDEO_AUDIO -> calculateMuxedStreamSize(adjustedBitrate, durationSec)
                     StreamType.UNKNOWN -> calculateVideoOnlySize(adjustedBitrate, durationSec)
                 }
-                Log.d(MODULE_NAME, "📊 Using AVERAGE-BANDWIDTH: ${formatBytes(calculatedSize)}")
                 cachedSizes[cacheKey] = calculatedSize
                 calculatedSize
 
             } catch (e: Exception) {
-                Log.w(MODULE_NAME, "⚠️ Accurate calculation failed: ${e.message}")
                 calculateSmartStreamSize(format.bitrate, durationSec, streamType)
             }
         }
     }
-
 
     private suspend fun sampleVideoSegments(
         playlistUrl: String,
@@ -1030,22 +862,20 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                         val size = getSegmentSize(segments[index], headers)
                         if (size > 0) {
                             segmentSizes.add(size)
-                            Log.d(MODULE_NAME, "📊 Video segment $index: ${formatBytes(size)}")
                         }
                     } catch (e: Exception) {
-                        Log.w(MODULE_NAME, "⚠️ Failed to sample segment $index: ${e.message}")
+                        Log.w(MODULE_NAME, "Failed to sample segment $index: ${e.message}")
                     }
                 }
 
                 return@withContext if (segmentSizes.isNotEmpty()) {
                     val avgSize = segmentSizes.average().toLong()
                     val totalSize = avgSize * segments.size
-                    Log.d(MODULE_NAME, "🎯 Video: ${segmentSizes.size}/$sampleCount segments sampled, avg=${formatBytes(avgSize)}, total=${formatBytes(totalSize)}")
                     totalSize
                 } else 0L
 
             } catch (e: Exception) {
-                Log.w(MODULE_NAME, "⚠️ Video segment sampling failed: ${e.message}")
+                Log.w(MODULE_NAME, "Video segment sampling failed: ${e.message}")
                 0L
             }
         }
@@ -1056,10 +886,10 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         headers: Map<String, String>?,
         sampleCount: Int
     ): Long {
-        return sampleVideoSegments(playlistUrl, headers, sampleCount) // Same logic
+        return sampleVideoSegments(playlistUrl, headers, sampleCount)
     }
 
-    // ✅ Download playlist content
+    // Download playlist content
     private suspend fun downloadPlaylist(url: String, headers: Map<String, String>?): String {
         return withContext(Dispatchers.IO) {
             try {
@@ -1088,7 +918,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         }
     }
 
-    // ✅ Parse segment URLs from playlist
     private fun parseSegmentUrls(playlist: String, baseUrl: String): List<String> {
         val segments = mutableListOf<String>()
 
@@ -1102,7 +931,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         return segments
     }
 
-    // ✅ HTTP HEAD request to get segment size without downloading
     private suspend fun getSegmentSize(url: String, headers: Map<String, String>?): Long {
         return withContext(Dispatchers.IO) {
             try {
@@ -1127,7 +955,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         }
     }
 
-    // ✅ Resolve relative URLs
     private fun resolveUrl(baseUrl: String, path: String): String {
         return if (path.startsWith("http")) {
             path
@@ -1137,7 +964,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         }
     }
 
-    // ✅ ENHANCED: Size calculations with 2% overhead
     private fun calculateVideoOnlySize(videoBitrate: Int, durationSec: Double): Long {
         if (videoBitrate <= 0 || durationSec <= 0) return 0L
 
@@ -1166,7 +992,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
     }
 
 
-    //  Smart size calculation based on stream type
     private fun calculateSmartStreamSize(
         videoBitrate: Int,
         durationSec: Double,
@@ -1186,8 +1011,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
             }
         }
     }
-
-    // In OfflineVideoDownloaderModule.kt
 
     @ReactMethod
     fun setPlaybackMode(mode: String, promise: Promise) {
@@ -1224,79 +1047,56 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
     @ReactMethod
     fun cancelDownload(downloadId: String, promise: Promise) {
         try {
-            Log.d(MODULE_NAME, "🛑 Cancelling download: $downloadId")
-
             val downloadManager = getDownloadManager()
             if (downloadManager == null) {
                 promise.reject("DOWNLOAD_MANAGER_ERROR", "DownloadManager not initialized")
                 return
             }
 
-            // ✅ STEP 1: Stop progress reporting
             stopProgressReporting(downloadId)
 
-            // ✅ STEP 2: Remove from DownloadManager (stops the download)
             try {
                 downloadManager.removeDownload(downloadId)
-                Log.d(MODULE_NAME, "✅ Removed from DownloadManager: $downloadId")
             } catch (e: Exception) {
                 Log.w(MODULE_NAME, "Warning: Could not remove from DownloadManager: ${e.message}")
             }
 
-            // ✅ STEP 3: Clean up cache entries for THIS download only (with delay)
             mainHandler.postDelayed({
                 try {
-                    Log.d(MODULE_NAME, "🧹 Starting surgical cache cleanup for: $downloadId")
                     VideoCache.removeDownload(reactApplicationContext, downloadId)
 
-                    // ✅ STEP 4: Clean up plugin cache
                     try {
                         OfflineVideoPlugin.getInstance().removeDownloadFromCache(downloadId)
                     } catch (e: Exception) {
                         Log.w(MODULE_NAME, "Warning: Plugin cache cleanup failed: ${e.message}")
                     }
-
-                    Log.d(MODULE_NAME, "✅ Surgical cleanup completed for: $downloadId")
-
                 } catch (e: Exception) {
                     Log.w(MODULE_NAME, "Warning: Cache cleanup failed for $downloadId: ${e.message}")
                 }
-            }, 1000) // Wait 1 second for download service to fully stop
+            }, 1000)
 
             promise.resolve(true)
-            Log.d(MODULE_NAME, "✅ Download cancellation initiated: $downloadId")
-
         } catch (e: Exception) {
-            Log.e(MODULE_NAME, "❌ Error cancelling download: ${e.message}")
-            promise.resolve(false) // Don't reject, return false for UI handling
-        }
-    }
-
-    // ✅ NEW: Add cache validation method
-    @ReactMethod
-    fun isDownloadCached(downloadId: String, promise: Promise) {
-        try {
-            val isCached = VideoCache.isDownloadCached(reactApplicationContext, downloadId)
-            Log.d(MODULE_NAME, "🔍 Cache check for $downloadId: $isCached")
-            promise.resolve(isCached)
-        } catch (e: Exception) {
-            Log.e(MODULE_NAME, "Error checking cache: ${e.message}")
             promise.resolve(false)
         }
     }
 
-    // ✅ NEW: Debug method to check all cache keys
+    @ReactMethod
+    fun isDownloadCached(downloadId: String, promise: Promise) {
+        try {
+            val isCached = VideoCache.isDownloadCached(reactApplicationContext, downloadId)
+            promise.resolve(isCached)
+        } catch (e: Exception) {
+            promise.resolve(false)
+        }
+    }
+
     @ReactMethod
     fun getAllCacheKeys(promise: Promise) {
         try {
             val keys = VideoCache.getAllCacheKeys(reactApplicationContext)
-            Log.d(MODULE_NAME, "📊 Found ${keys.size} cache keys")
-            keys.forEach { key ->
-                Log.d(MODULE_NAME, "🔑 Cache key: $key")
-            }
             promise.resolve(keys.size)
         } catch (e: Exception) {
-            Log.e(MODULE_NAME, "Error getting cache keys: ${e.message}")
             promise.resolve(0)
         }
     }
@@ -1312,7 +1112,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         }
     }
 
-    // ✅ Add this method to check storage location
     @ReactMethod
     fun getStorageInfo(promise: Promise) {
         try {
@@ -1320,7 +1119,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
 
             val storageInfo = Arguments.createMap()
 
-            // ✅ Show where VideoCache is actually storing files
             val cacheStats = VideoCache.getStorageStats(context)
             storageInfo.putString("cachePath", cacheStats.path)
             storageInfo.putBoolean("isProtected", cacheStats.isProtected)
@@ -1334,7 +1132,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         }
     }
 
-    // ✅ Helper method for folder size calculation
     private fun getFolderSize(folder: File): Long {
         return try {
             if (!folder.exists()) return 0L
@@ -1359,7 +1156,7 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
             val context = reactApplicationContext
             val currentCacheSize = VideoCache.getCacheSize(context)
             val availableSpace = VideoCache.getAvailableCacheSpace(context)
-            val totalCacheSize = 15L * 1024 * 1024 * 1024 // 15GB
+            val totalCacheSize = 15L * 1024 * 1024 * 1024
 
             promise.resolve(Arguments.createMap().apply {
                 putDouble("currentCacheSizeMB", currentCacheSize / (1024.0 * 1024.0))
@@ -1367,7 +1164,7 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                 putDouble("totalCacheSizeMB", totalCacheSize / (1024.0 * 1024.0))
                 putString("currentCacheFormatted", formatBytes(currentCacheSize))
                 putString("availableSpaceFormatted", formatBytes(availableSpace))
-                putBoolean("hasEnoughSpace", availableSpace > (2L * 1024 * 1024 * 1024)) // 2GB minimum
+                putBoolean("hasEnoughSpace", availableSpace > (2L * 1024 * 1024 * 1024))
             })
         } catch (e: Exception) {
             promise.reject("STORAGE_CHECK_ERROR", "Failed to check storage: ${e.message}")
@@ -1490,10 +1287,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
             val allDownloads = Arguments.createArray()
             val processedIds = mutableSetOf<String>()
 
-            Log.d(MODULE_NAME, "🔍 Getting downloads from both sources...")
-
-            // ✅ FIRST: Get active downloads (real-time progress)
-            Log.d(MODULE_NAME, "📥 Checking currentDownloads for active downloads...")
             downloadManager.currentDownloads.forEach { download ->
                 processedIds.add(download.request.id)
 
@@ -1508,20 +1301,14 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                         putString("uri", download.request.uri.toString())
                     }
                 })
-
-                Log.d(MODULE_NAME, "🔥 Active Download: ${download.request.id}, State: ${getDownloadStateString(download.state)}, Progress: ${download.percentDownloaded.roundToInt()}%")
             }
 
-            // ✅ SECOND: Get all downloads from index (includes completed/failed)
-            Log.d(MODULE_NAME, "📚 Checking downloadIndex for all downloads...")
             val downloadsCursor = downloadManager.downloadIndex.getDownloads()
 
             while (downloadsCursor.moveToNext()) {
                 val download = downloadsCursor.download
 
-                // ✅ Skip if already processed from currentDownloads (avoid duplicates)
                 if (processedIds.contains(download.request.id)) {
-                    Log.d(MODULE_NAME, "⏭️ Skipping duplicate: ${download.request.id}")
                     continue
                 }
 
@@ -1539,25 +1326,16 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                         putString("uri", download.request.uri.toString())
                     }
                 })
-
-                Log.d(MODULE_NAME, "📊 Indexed Download: ${download.request.id}, State: ${getDownloadStateString(download.state)}")
             }
 
             downloadsCursor.close()
 
-            Log.d(MODULE_NAME, "✅ Total downloads found: ${processedIds.size}")
-            Log.d(MODULE_NAME, "🔥 Active downloads: ${downloadManager.currentDownloads.size}")
-            Log.d(MODULE_NAME, "📚 All downloads (including completed): ${processedIds.size}")
-
             promise.resolve(allDownloads)
-
         } catch (e: Exception) {
-            Log.e(MODULE_NAME, "❌ Error getting all downloads: ${e.message}", e)
             promise.reject("ERROR", "Failed to get downloads: ${e.message}")
         }
     }
 
-    // ✅ NEW: Sync progress after app restart
     @ReactMethod
     fun syncDownloadProgress(promise: Promise) {
         try {
@@ -1566,8 +1344,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                 promise.reject("ERROR", "DownloadManager not initialized")
                 return
             }
-
-            Log.d(MODULE_NAME, "🔄 Syncing download progress after app restart")
 
             val downloads = mutableListOf<WritableMap>()
             val cursor = downloadManager.downloadIndex.getDownloads()
@@ -1593,26 +1369,15 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
             promise.resolve(Arguments.createArray().apply {
                 downloads.forEach { pushMap(it) }
             })
-
-            Log.d(MODULE_NAME, "✅ Synced ${downloads.size} downloads")
-
         } catch (e: Exception) {
-            Log.e(MODULE_NAME, "❌ Error syncing download progress: ${e.message}")
             promise.reject("SYNC_ERROR", e.message)
         }
     }
 
-    // Enhanced progress reporting
     private inner class DownloadManagerListener : DownloadManager.Listener {
         override fun onDownloadChanged(manager: DownloadManager, download: Download, finalException: Exception?) {
             val state = getDownloadStateString(download.state)
             val progress = download.percentDownloaded.roundToInt()
-
-            Log.d(MODULE_NAME, "📊 Download ${download.request.id}: $state ($progress%) - ${formatBytes(download.bytesDownloaded)}/${formatBytes(download.contentLength)}")
-
-            if (finalException != null) {
-                Log.e(MODULE_NAME, "❌ Download error for ${download.request.id}: ${finalException.message}")
-            }
 
             when (download.state) {
                 Download.STATE_DOWNLOADING -> {
@@ -1648,14 +1413,12 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
 
         activeDownloads[downloadId] = progressRunnable
         progressHandler.post(progressRunnable)
-        Log.d(MODULE_NAME, "📊 Started progress reporting for: $downloadId")
     }
 
     private fun stopProgressReporting(downloadId: String) {
         activeDownloads[downloadId]?.let { runnable ->
             progressHandler.removeCallbacks(runnable)
             activeDownloads.remove(downloadId)
-            Log.d(MODULE_NAME, "🛑 Stopped progress reporting for: $downloadId")
         }
     }
 
