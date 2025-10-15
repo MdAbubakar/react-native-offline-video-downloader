@@ -202,7 +202,7 @@ class VideoDownloadManager: NSObject {
     
     @objc private func appWillEnterForeground() {
         
-        for (downloadId, downloadTask) in activeDownloads {
+        for (_, downloadTask) in activeDownloads {
             if downloadTask.state == .running {
                 downloadTask.suspend()
                 downloadTask.resume()
@@ -700,13 +700,6 @@ class VideoDownloadManager: NSObject {
             return
         }
         
-        let downloadInfo: [String: Any] = [
-            "downloadId": downloadId,
-            "localUri": location.absoluteString,
-            "fileSize": size,
-            "formattedSize": formatBytes(size),
-            "downloadDate": Date().timeIntervalSince1970
-        ]
         offlineRegistry.registerDownload(
             downloadId: downloadId,
             localUrl: location
@@ -1063,7 +1056,7 @@ class VideoDownloadManager: NSObject {
         
     private func resumeStalledDownloads() {
         DispatchQueue.main.async {
-            for (downloadId, downloadTask) in self.activeDownloads {
+            for (_, downloadTask) in self.activeDownloads {
                 if downloadTask.state == .suspended {
                     downloadTask.resume()
                 }
@@ -1108,10 +1101,6 @@ class VideoDownloadManager: NSObject {
         resolver: @escaping RCTPromiseResolveBlock,
         rejecter: @escaping RCTPromiseRejectBlock
     ) {
-        if incompleteDownloads.contains(downloadId) {
-            rejecter("DOWNLOAD_INCOMPLETE", "Download is incomplete and needs to be restarted. Please start a new download.", nil)
-            return
-        }
         guard let downloadTask = activeDownloads[downloadId] else {
             rejecter("DOWNLOAD_NOT_FOUND", "Download not found: \(downloadId)", nil)
             return
@@ -1121,6 +1110,7 @@ class VideoDownloadManager: NSObject {
             let currentProgress = progressInfo.percentage
             
             progressInfo.state = "downloading"
+            progressInfo.percentage = currentProgress
             downloadProgress[downloadId] = progressInfo
         }
         
@@ -1259,6 +1249,7 @@ class VideoDownloadManager: NSObject {
             if let downloadId = download["downloadId"] as? String {
                 var downloadInfo = download
                 
+                downloadInfo["downloadId"] = downloadId
                 downloadInfo["state"] = "completed"
                 downloadInfo["progress"] = 100
                 downloadInfo["isCompleted"] = true
@@ -1530,8 +1521,6 @@ class VideoDownloadManager: NSObject {
                     ]
                     
                     videoTracks.append(trackData)
-                    
-                    let sizeType = streamType == .separateAudioVideo ? "video only" : "video+audio"
                 }
             }
         }
