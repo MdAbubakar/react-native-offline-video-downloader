@@ -79,22 +79,10 @@ class VideoQualityManager {
             }
         }
         
-        // Check for HDR color space (Dolby Vision uses PQ transfer)
-        if #available(iOS 11.0, *) {
-            // Check if it has HDR characteristics
-            // Dolby Vision typically has specific color primaries
-            if let videoRange = videoAttributes.videoRange,
-               videoRange != .SDR {
-                // If it's HDR but not explicitly labeled, might be Dolby Vision
-                // For safety, we'll check codec strings more thoroughly
-                return false
-            }
-        }
-        
         return false
     }
     
-    private func codecTypeToString(_ codecType: CMVideoCodecType) -> String {
+    func codecTypeToString(_ codecType: CMVideoCodecType) -> String {
         switch codecType {
         case kCMVideoCodecType_H264:
             return "H.264"
