@@ -90,7 +90,6 @@ export class OfflineDownloader {
     downloadId: string,
     selectedHeight: number,
     selectedWidth: number = 1920,
-    preferDolbyAtmos: boolean = false,
     options: DownloadOptions = {}
   ): Promise<DownloadResult> {
     try {
@@ -99,7 +98,6 @@ export class OfflineDownloader {
         downloadId,
         selectedHeight,
         selectedWidth,
-        preferDolbyAtmos,
         options
       );
     } catch (error) {

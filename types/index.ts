@@ -6,27 +6,28 @@ export interface VideoTrack {
   formattedSize: string;
   quality: string;
   trackId?: string;
+  codecs?: string; // e.g., "avc1.640028" for H.264
+  streamType?: string; // "SEPARATE_AUDIO_VIDEO" or "MUXED"
 }
 
 export interface AudioTrack {
   language: string;
   label: string;
-  channelCount: number;
-  audioType:
-    | "dolby_atmos"
-    | "dolby_digital_plus"
-    | "dolby_digital"
-    | "surround"
-    | "stereo";
-  isDolbyAtmos: boolean;
-  size: number;
+  channelCount: number; // Will always be <= 2 for stereo/mono
+  audioType: "stereo" | "mono";
+  bitrate: number;
+  size: number; // Size in bytes
   formattedSize: string;
+  mimeType?: string; // e.g., "audio/mp4a-latm" for AAC
 }
 
 export interface AvailableTracksResult {
   videoTracks: VideoTrack[];
   audioTracks: AudioTrack[];
   duration: number;
+  streamType?: string; // "SEPARATE_AUDIO_VIDEO" or "MUXED"
+  allowedQualities?: number[]; // e.g., [480, 720, 1080]
+  availableQualityCount?: number;
 }
 
 export interface DownloadOptions {
@@ -142,7 +143,6 @@ export interface NativeOfflineVideoDownloader {
     downloadId: string,
     selectedHeight: number,
     selectedWidth: number,
-    preferDolbyAtmos: boolean,
     options?: DownloadOptions
   ): Promise<DownloadResult>;
 

@@ -63,11 +63,57 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         private const val MODULE_NAME = "OfflineVideoDownloader"
         private var _downloadManager: DownloadManager? = null
 
+        @Volatile
+        private var isInitialized = false
+
         @JvmStatic
         fun getDownloadManager(): DownloadManager? = _downloadManager
 
         internal fun setDownloadManager(manager: DownloadManager?) {
             _downloadManager = manager
+            isInitialized = manager != null
+        }
+
+        @JvmStatic
+        fun isDownloadManagerInitialized(): Boolean = isInitialized
+
+        @JvmStatic
+        fun initializeDownloadManagerForService(context: Context) {
+            if (isInitialized) {
+                return
+            }
+
+            try {
+                val downloadCache = VideoCache.getInstance(context)
+                val databaseProvider = StandaloneDatabaseProvider(context)
+                val downloadIndex = DefaultDownloadIndex(databaseProvider)
+
+                val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+                    .setAllowCrossProtocolRedirects(true)
+                    .setConnectTimeoutMs(30000)
+                    .setReadTimeoutMs(30000)
+                    .setUserAgent("ExoPlayerOfflineDownloader")
+
+                val upstreamDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+
+                val cacheDataSourceFactory = CacheDataSource.Factory()
+                    .setCache(downloadCache)
+                    .setUpstreamDataSourceFactory(upstreamDataSourceFactory)
+                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+                val downloadExecutor: Executor = Executors.newFixedThreadPool(3)
+                val downloaderFactory = DefaultDownloaderFactory(cacheDataSourceFactory, downloadExecutor)
+
+                val manager = DownloadManager(context, downloadIndex, downloaderFactory).apply {
+                    requirements = Requirements(Requirements.NETWORK)
+                    maxParallelDownloads = 3
+                    // Don't add listener here - will be added when React is ready
+                }
+
+                setDownloadManager(manager)
+            } catch (e: Exception) {
+                throw e
+            }
         }
     }
 
@@ -119,36 +165,18 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
     }
 
     private fun initializeDownloadManager() {
-        val context = reactApplicationContext
-        val downloadCache = VideoCache.getInstance(context)
-        val databaseProvider = StandaloneDatabaseProvider(context)
-        val downloadIndex = DefaultDownloadIndex(databaseProvider)
-
-        val downloadDirectory = File(VideoCache.getDownloadsDirectoryPath(context))
-
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(30000)
-            .setReadTimeoutMs(30000)
-            .setUserAgent("ExoPlayer/OfflineDownloader")
-
-        val upstreamDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
-
-        val cacheDataSourceFactory = CacheDataSource.Factory()
-            .setCache(downloadCache)
-            .setUpstreamDataSourceFactory(upstreamDataSourceFactory)
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-
-        val downloadExecutor: Executor = Executors.newFixedThreadPool(3)
-        val downloaderFactory = DefaultDownloaderFactory(cacheDataSourceFactory, downloadExecutor)
-
-        val downloadManager = DownloadManager(context, downloadIndex, downloaderFactory).apply {
-            requirements = Requirements(Requirements.NETWORK)
-            maxParallelDownloads = 3
-            addListener(DownloadManagerListener())
+        if (isDownloadManagerInitialized()) {
+            _downloadManager?.addListener(DownloadManagerListener())
+            return
         }
+        try {
+            initializeDownloadManagerForService(reactApplicationContext)
 
-        setDownloadManager(downloadManager)
+            _downloadManager?.addListener(DownloadManagerListener())
+
+        } catch (e: Exception) {
+            throw e
+        }
     }
 
     fun cleanup() {
@@ -158,9 +186,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
             }
             storedTrackIdentifiers.clear()
             segmentSamplingScope.cancel()
-            _downloadManager?.release()
-            setDownloadManager(null)
-            VideoCache.release()
         } catch (e: Exception) {
             Log.e(MODULE_NAME, "Error during cleanup: ${e.message}")
         }
@@ -171,11 +196,9 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         mainHandler.post {
             try {
                 cachedSizes.clear()
-
                 val context = reactApplicationContext
                 val headers = extractHeadersFromOptions(options)
                 val mediaItem = MediaItem.fromUri(masterUrl)
-
                 val dataSourceFactory = createHttpOnlyDataSourceFactory(context, headers)
 
                 @Suppress("DEPRECATION")
@@ -189,16 +212,15 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                 downloadHelper.prepare(object : DownloadHelper.Callback {
                     override fun onPrepared(helper: DownloadHelper, tracksInfoAvailable: Boolean) {
                         try {
-                            // Detect stream type first
                             val streamType = detectStreamType(helper)
-
                             val allowedQualities = setOf(480, 720, 1080)
 
                             val videoTrackMap = mutableMapOf<Int, WritableMap>()
                             val videoBitrateMap = mutableMapOf<Int, Int>()
                             val videoTrackIdentifiers = mutableMapOf<Int, TrackIdentifier>()
+
                             val audioTrackMap = mutableMapOf<String, WritableMap>()
-                            val audioPriorityMap = mutableMapOf<String, Int>()
+
                             var totalDurationSec = 0.0
 
                             for (periodIndex in 0 until helper.periodCount) {
@@ -206,34 +228,44 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
 
                                 if (periodIndex == 0) {
                                     val manifest = helper.manifest as? HlsManifest
-                                    totalDurationSec = manifest?.mediaPlaylist?.segments?.sumOf { it.durationUs / 1_000_000.0 } ?: 0.0
+                                    totalDurationSec = manifest?.mediaPlaylist?.segments?.sumOf {
+                                        it.durationUs / 1_000_000.0
+                                    } ?: 0.0
                                 }
 
                                 for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
                                     val trackGroups = mappedTrackInfo.getTrackGroups(rendererIndex)
+
                                     if (trackGroups.length > 0) {
                                         val rendererType = mappedTrackInfo.getRendererType(rendererIndex)
 
+                                        // VIDEO TRACKS - Filter out Dolby Vision
                                         if (rendererType == C.TRACK_TYPE_VIDEO) {
                                             for (groupIndex in 0 until trackGroups.length) {
                                                 val group = trackGroups.get(groupIndex)
+
                                                 for (trackIndex in 0 until group.length) {
                                                     val format = group.getFormat(trackIndex)
 
-                                                    if (format.height in allowedQualities && format.bitrate > 0) {
-                                                        // I-FRAME filtering
-                                                        val isIFrameStream = format.roleFlags and C.ROLE_FLAG_TRICK_PLAY != 0 ||
-                                                                format.containerMimeType?.contains("image") == true
+                                                    // ⚠️ FILTER OUT DOLBY VISION
+                                                    if (isDolbyVisionFormat(format)) {
+                                                        Log.d(MODULE_NAME, "Skipping Dolby Vision track: ${format.height}p, codec: ${format.codecs}")
+                                                        continue
+                                                    }
 
+                                                    if (format.height in allowedQualities && format.bitrate > 0) {
+                                                        // Filter I-FRAME streams
+                                                        val isIFrameStream = (format.roleFlags and C.ROLE_FLAG_TRICK_PLAY) != 0 ||
+                                                                format.containerMimeType?.contains("image") == true
                                                         val expectedMinBitrate = getMinExpectedBitrate(format.height)
                                                         val isProbablyIFrame = format.bitrate < expectedMinBitrate
 
                                                         if (!isIFrameStream && !isProbablyIFrame) {
-                                                            val currentBitrate = format.bitrate
-                                                            val existingBitrate = videoBitrateMap[format.height]
+                                                            // Keep track with highest bitrate per quality
+                                                            val existingBitrate = videoBitrateMap[format.height] ?: 0
 
-                                                            if (existingBitrate == null || currentBitrate > existingBitrate) {
-                                                                videoBitrateMap[format.height] = currentBitrate
+                                                            if (format.bitrate > existingBitrate) {
+                                                                videoBitrateMap[format.height] = format.bitrate
 
                                                                 val estimatedSizeBytes = if (totalDurationSec > 0) {
                                                                     runBlocking {
@@ -262,30 +294,48 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                                                                     putInt("bitrate", format.bitrate)
                                                                     putDouble("size", estimatedSizeBytes.toDouble())
                                                                     putString("formattedSize", formatBytes(estimatedSizeBytes))
-                                                                    putString("trackId", "${periodIndex}_${groupIndex}_${trackIndex}")
+                                                                    putString("trackId", "$periodIndex:$groupIndex:$trackIndex")
                                                                     putString("quality", "${format.height}p")
                                                                     putString("streamType", streamType.name)
+                                                                    putString("codecs", format.codecs)
                                                                 }
+
                                                                 videoTrackMap[format.height] = trackData
 
-                                                                val sizeType = if (streamType == StreamType.SEPARATE_AUDIO_VIDEO) "video only" else "video+audio"
+                                                                Log.d(MODULE_NAME, "Selected SDR track: ${format.height}p, ${format.bitrate} bps, codec: ${format.codecs}")
                                                             }
-                                                        } else {
-                                                            Log.d(MODULE_NAME, "Filtered I-FRAME: ${format.height}p, ${format.bitrate} bps")
                                                         }
-                                                    } else if (format.height !in allowedQualities) {
-                                                        Log.d(MODULE_NAME, "Skipped ${format.height}p (not in allowed qualities)")
                                                     }
                                                 }
                                             }
                                         }
 
-                                        // Audio processing (only for separate audio streams)
-                                        if (rendererType == C.TRACK_TYPE_AUDIO && streamType == StreamType.SEPARATE_AUDIO_VIDEO && periodIndex == 0) {
+                                        // AUDIO TRACKS - Filter out Dolby Atmos/Digital, keep only stereo
+                                        if (rendererType == C.TRACK_TYPE_AUDIO &&
+                                            streamType == StreamType.SEPARATE_AUDIO_VIDEO &&
+                                            periodIndex == 0) {
+
                                             for (groupIndex in 0 until trackGroups.length) {
                                                 val group = trackGroups.get(groupIndex)
+
                                                 for (trackIndex in 0 until group.length) {
                                                     val format = group.getFormat(trackIndex)
+
+                                                    // ⚠️ FILTER OUT DOLBY AUDIO
+                                                    val isDolbyAtmos = format.sampleMimeType?.contains("eac3-joc") == true
+                                                    val isDolbyDigital = format.sampleMimeType?.contains("eac3") == true ||
+                                                            format.sampleMimeType?.contains("ac-3") == true
+
+                                                    if (isDolbyAtmos || isDolbyDigital) {
+                                                        Log.d(MODULE_NAME, "Skipping Dolby audio track: ${format.sampleMimeType}, channels: ${format.channelCount}")
+                                                        continue
+                                                    }
+
+                                                    // Only accept stereo (2 channels) or lower
+                                                    if (format.channelCount > 2) {
+                                                        Log.d(MODULE_NAME, "Skipping surround audio track: ${format.channelCount} channels")
+                                                        continue
+                                                    }
 
                                                     val language = format.language ?: "unknown"
                                                     val audioBitrate = if (format.bitrate > 0) format.bitrate else 128000
@@ -294,31 +344,25 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                                                         calculateAudioOnlySize(audioBitrate, totalDurationSec)
                                                     } else 0L
 
-                                                    val isDolbyAtmos = format.sampleMimeType?.contains("eac3-joc") == true
-                                                    val isDolbyDigital = format.sampleMimeType?.contains("eac3") == true || format.sampleMimeType?.contains("ac-3") == true
-                                                    val audioType = when {
-                                                        isDolbyAtmos -> "dolby_atmos"
-                                                        isDolbyDigital -> "dolby_digital"
-                                                        format.channelCount > 2 -> "surround"
-                                                        else -> "stereo"
-                                                    }
+                                                    // Only keep best stereo track per language
+                                                    val existingTrack = audioTrackMap[language]
+                                                    val existingBitrate = existingTrack?.getInt("bitrate") ?: 0
 
-                                                    val audioTrackData = Arguments.createMap().apply {
-                                                        putString("language", language)
-                                                        putString("label", format.label ?: "stream_$groupIndex")
-                                                        putInt("channelCount", format.channelCount)
-                                                        putString("audioType", audioType)
-                                                        putBoolean("isDolbyAtmos", isDolbyAtmos)
-                                                        putDouble("size", estimatedSizeBytes.toDouble())
-                                                        putString("formattedSize", formatBytes(estimatedSizeBytes))
-                                                    }
+                                                    if (format.bitrate > existingBitrate) {
+                                                        val audioTrackData = Arguments.createMap().apply {
+                                                            putString("language", language)
+                                                            putString("label", format.label ?: "Stereo $language")
+                                                            putInt("channelCount", format.channelCount)
+                                                            putString("audioType", "stereo")
+                                                            putInt("bitrate", audioBitrate)
+                                                            putDouble("size", estimatedSizeBytes.toDouble())
+                                                            putString("formattedSize", formatBytes(estimatedSizeBytes))
+                                                            putString("mimeType", format.sampleMimeType)
+                                                        }
 
-                                                    val currentPriority = getAudioPriority(audioType)
-                                                    val existingPriority = audioPriorityMap[language] ?: 0
-
-                                                    if (currentPriority > existingPriority) {
-                                                        audioPriorityMap[language] = currentPriority
                                                         audioTrackMap[language] = audioTrackData
+
+                                                        Log.d(MODULE_NAME, "Selected stereo audio: $language, ${format.channelCount}ch, ${audioBitrate} bps")
                                                     }
                                                 }
                                             }
@@ -329,10 +373,9 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
 
                             storedTrackIdentifiers[masterUrl] = videoTrackIdentifiers
 
-                            // Sort video tracks by quality (highest first) and ensure only allowed qualities
+                            // Build response
                             val videoTracks = Arguments.createArray()
                             val sortedVideoQualities = listOf(1080, 720, 480)
-
                             sortedVideoQualities.forEach { height ->
                                 videoTrackMap[height]?.let { trackData ->
                                     videoTracks.pushMap(trackData)
@@ -340,7 +383,9 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                             }
 
                             val audioTracks = Arguments.createArray()
-                            audioTrackMap.values.forEach { audioTracks.pushMap(it) }
+                            audioTrackMap.values.forEach {
+                                audioTracks.pushMap(it)
+                            }
 
                             promise.resolve(Arguments.createMap().apply {
                                 putArray("videoTracks", videoTracks)
@@ -371,6 +416,17 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         }
     }
 
+    // Helper function to detect Dolby Vision formats
+    private fun isDolbyVisionFormat(format: Format): Boolean {
+        val codecs = format.codecs?.lowercase() ?: ""
+
+        // Check for Dolby Vision codec identifiers
+        return codecs.contains("dvhe") || // Dolby Vision HEVC
+                codecs.contains("dvh1") || // Dolby Vision HEVC profile 1
+                codecs.contains("dav1") || // Dolby Vision AV1
+                codecs.contains("dvav") || // Dolby Vision AV1
+                format.colorInfo?.colorTransfer == C.COLOR_TRANSFER_ST2084
+    }
 
     @ReactMethod
     fun downloadStream(
@@ -378,13 +434,11 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         downloadId: String,
         selectedHeight: Int,
         selectedWidth: Int,
-        preferDolbyAtmos: Boolean,
         options: ReadableMap?,
         promise: Promise
     ) {
         mainHandler.post {
             try {
-                checkAndRemoveExistingDownload(downloadId)
 
                 val context = reactApplicationContext
                 val headers = extractHeadersFromOptions(options)
@@ -417,22 +471,21 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                                         selectSeparateAudioVideoTracks(
                                             helper,
                                             targetTrack,
-                                            preferDolbyAtmos,
                                             masterUrl
                                         )
                                     }
 
                                     StreamType.MUXED_VIDEO_AUDIO -> {
-                                        selectMuxedVideoTrack(helper, targetTrack, preferDolbyAtmos)
+                                        selectMuxedVideoTrack(helper, targetTrack)
                                     }
 
                                     StreamType.UNKNOWN -> {
-                                        selectFallbackTracks(helper, targetTrack, preferDolbyAtmos)
+                                        selectFallbackTracks(helper, targetTrack)
                                     }
                                 }
 
                             } else {
-                                selectFallbackByResolution(helper, selectedWidth, selectedHeight, preferDolbyAtmos)
+                                selectFallbackByResolution(helper, selectedWidth, selectedHeight)
                             }
 
                             val downloadRequest = helper.getDownloadRequest(downloadId, null)
@@ -463,30 +516,9 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         }
     }
 
-    private fun checkAndRemoveExistingDownload(downloadId: String) {
-        try {
-            _downloadManager?.let { manager ->
-                val existingDownload = manager.downloadIndex.getDownload(downloadId)
-                if (existingDownload != null) {
-                    DownloadService.sendRemoveDownload(
-                        reactContext,
-                        VideoDownloadService::class.java,
-                        downloadId,
-                        false
-                    )
-                    Thread.sleep(300)
-                }
-            }
-
-        } catch (e: Exception) {
-            Log.w(MODULE_NAME, "Warning checking existing download: ${e.message}")
-        }
-    }
-
     private fun selectSeparateAudioVideoTracks(
         helper: DownloadHelper,
         targetVideoTrack: TrackIdentifier,
-        preferDolbyAtmos: Boolean,
         masterUrl: String
     ) {
         try {
@@ -496,15 +528,9 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
                 .setMaxVideoBitrate(targetVideoTrack.format.bitrate + 200000)
                 .setMinVideoBitrate(maxOf(targetVideoTrack.format.bitrate - 200000, 0))
 
-            if (preferDolbyAtmos) {
-                parametersBuilder
-                    .setPreferredAudioMimeType("audio/eac3-joc")
-                    .setMaxAudioChannelCount(16)
-            } else {
                 parametersBuilder
                     .setPreferredAudioMimeType("audio/mp4a-latm")
                     .setMaxAudioChannelCount(2)
-            }
 
             val parameters = parametersBuilder
                 .setSelectUndeterminedTextLanguage(false)
@@ -524,7 +550,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
     private fun selectMuxedVideoTrack(
         helper: DownloadHelper,
         targetTrack: TrackIdentifier,
-        preferDolbyAtmos: Boolean
     ) {
         val trackSelectionOverride = TrackSelectionOverride(
             targetTrack.trackGroup,
@@ -534,13 +559,7 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         val parametersBuilder = DefaultTrackSelector.Parameters.Builder()
             .addOverride(trackSelectionOverride)
 
-        if (preferDolbyAtmos) {
-            parametersBuilder
-                .setPreferredAudioMimeType("audio/eac3-joc")
-                .setMaxAudioChannelCount(16)
-        } else {
-            parametersBuilder.setMaxAudioChannelCount(2)
-        }
+        parametersBuilder.setMaxAudioChannelCount(2)
 
         val parameters = parametersBuilder.build()
         helper.addTrackSelection(targetTrack.periodIndex, parameters)
@@ -550,7 +569,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
     private fun selectFallbackTracks(
         helper: DownloadHelper,
         targetTrack: TrackIdentifier,
-        preferDolbyAtmos: Boolean
     ) {
         val trackSelectionOverride = TrackSelectionOverride(
             targetTrack.trackGroup,
@@ -559,7 +577,7 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
 
         val parametersBuilder = DefaultTrackSelector.Parameters.Builder()
             .addOverride(trackSelectionOverride)
-            .setMaxAudioChannelCount(if (preferDolbyAtmos) 16 else 2)
+            .setMaxAudioChannelCount(2)
 
         val parameters = parametersBuilder.build()
 
@@ -572,18 +590,13 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
         helper: DownloadHelper,
         selectedWidth: Int,
         selectedHeight: Int,
-        preferDolbyAtmos: Boolean
     ) {
 
         val trackSelectorBuilder = DefaultTrackSelector.Parameters.Builder()
             .setForceHighestSupportedBitrate(true)
             .setMaxVideoSize(selectedWidth, selectedHeight)
             .setMinVideoSize(selectedWidth, selectedHeight)
-            .setMaxAudioChannelCount(if (preferDolbyAtmos) 16 else 2)
-
-        if (preferDolbyAtmos) {
-            trackSelectorBuilder.setPreferredAudioMimeType("audio/eac3-joc")
-        }
+            .setMaxAudioChannelCount(2)
 
         val trackSelectorParameters = trackSelectorBuilder.build()
 
@@ -1376,8 +1389,6 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
 
     private inner class DownloadManagerListener : DownloadManager.Listener {
         override fun onDownloadChanged(manager: DownloadManager, download: Download, finalException: Exception?) {
-            val state = getDownloadStateString(download.state)
-            val progress = download.percentDownloaded.roundToInt()
 
             when (download.state) {
                 Download.STATE_DOWNLOADING -> {
@@ -1391,6 +1402,10 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
             }
 
             sendProgressEvent(download)
+        }
+
+        override fun onDownloadRemoved(manager: DownloadManager, download: Download) {
+            stopProgressReporting(download.request.id)
         }
     }
 
@@ -1423,20 +1438,33 @@ class OfflineVideoDownloaderModule(private val reactContext: ReactApplicationCon
     }
 
     private fun sendProgressEvent(download: Download) {
-        val progress = download.percentDownloaded.roundToInt()
-        val state = getDownloadStateString(download.state)
+        try {
+            if (!reactApplicationContext.hasActiveReactInstance()) {
+                return
+            }
 
-        reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit("DownloadProgress", Arguments.createMap().apply {
-                putString("downloadId", download.request.id)
-                putInt("progress", progress)
-                putDouble("bytesDownloaded", download.bytesDownloaded.toDouble())
-                putDouble("totalBytes", download.contentLength.toDouble())
-                putString("state", state)
-                putString("formattedDownloaded", formatBytes(download.bytesDownloaded))
-                putString("formattedTotal", formatBytes(download.contentLength))
-                putBoolean("isCompleted", download.state == Download.STATE_COMPLETED)
-            })
+            if (!reactApplicationContext.hasCatalystInstance()) {
+                return
+            }
+
+            val progress = download.percentDownloaded.roundToInt()
+            val state = getDownloadStateString(download.state)
+
+            reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit("DownloadProgress", Arguments.createMap().apply {
+                    putString("downloadId", download.request.id)
+                    putInt("progress", progress)
+                    putDouble("bytesDownloaded", download.bytesDownloaded.toDouble())
+                    putDouble("totalBytes", download.contentLength.toDouble())
+                    putString("state", state)
+                    putString("formattedDownloaded", formatBytes(download.bytesDownloaded))
+                    putString("formattedTotal", formatBytes(download.contentLength))
+                    putBoolean("isCompleted", download.state == Download.STATE_COMPLETED)
+                })
+        } catch (e: Exception) {
+            Log.e(MODULE_NAME, "Error sending progress event: ${e.message}")
+        }
+
     }
 
     private fun createHttpOnlyDataSourceFactory(
