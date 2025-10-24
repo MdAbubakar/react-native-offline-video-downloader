@@ -56,13 +56,12 @@ class OfflineVideoDownloader: RCTEventEmitter {
         )
     }
     
-    @objc(downloadStream:downloadId:selectedHeight:selectedWidth:preferDolbyAtmos:options:resolver:rejecter:)
+    @objc(downloadStream:downloadId:selectedHeight:selectedWidth:options:resolver:rejecter:)
     func downloadStream(
         _ masterUrl: String,
         downloadId: String,
         selectedHeight: NSNumber,
         selectedWidth: NSNumber,
-        preferDolbyAtmos: Bool,
         options: NSDictionary?,
         resolver: @escaping RCTPromiseResolveBlock,
         rejecter: @escaping RCTPromiseRejectBlock
@@ -72,7 +71,6 @@ class OfflineVideoDownloader: RCTEventEmitter {
             downloadId: downloadId,
             selectedHeight: selectedHeight.intValue,
             selectedWidth: selectedWidth.intValue,
-            preferDolbyAtmos: preferDolbyAtmos,
             options: options,
             resolver: resolver,
             rejecter: rejecter
