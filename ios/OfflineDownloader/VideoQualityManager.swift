@@ -9,6 +9,10 @@ class VideoQualityManager {
         for variant in asset.variants {
             guard let videoAttributes = variant.videoAttributes else { continue }
             
+            if isDolbyVisionVariant(variant) {
+                continue
+            }
+            
             let height = Int(videoAttributes.presentationSize.height)
             let width = Int(videoAttributes.presentationSize.width)
             
@@ -34,10 +38,60 @@ class VideoQualityManager {
     }
     
     func filterAllowedQualities(_ qualities: [[String: Any]], allowed: [Int]) -> [[String: Any]] {
-        return qualities.filter { quality in
-            let height = quality["height"] as? Int ?? 0
-            return allowed.contains(height)
+        var qualityMap: [Int: [String: Any]] = [:]
+        
+        for quality in qualities {
+            guard let height = quality["height"] as? Int,
+                  allowed.contains(height),
+                  let bitrate = quality["bitrate"] as? Int else { continue }
+            
+            if let existing = qualityMap[height],
+               let existingBitrate = existing["bitrate"] as? Int {
+                if bitrate > existingBitrate {
+                    qualityMap[height] = quality
+                }
+            } else {
+                qualityMap[height] = quality
+            }
         }
+        
+        // Sort by height descending
+        return qualityMap.values.sorted { quality1, quality2 in
+            let height1 = quality1["height"] as? Int ?? 0
+            let height2 = quality2["height"] as? Int ?? 0
+            return height1 > height2
+        }
+    }
+    
+    func isDolbyVisionVariant(_ variant: AVAssetVariant) -> Bool {
+        guard let videoAttributes = variant.videoAttributes else { return false }
+        
+        // Check codec types for Dolby Vision identifiers
+        for codecType in videoAttributes.codecTypes {
+            let codecString = codecTypeToString(codecType).lowercased()
+            
+            // Dolby Vision codec identifiers
+            if codecString.contains("dvhe") ||  // Dolby Vision HEVC
+               codecString.contains("dvh1") ||  // Dolby Vision profile 1
+               codecString.contains("dav1") ||  // Dolby Vision AV1
+               codecString.contains("dvav") {   // Dolby Vision AV1
+                return true
+            }
+        }
+        
+        // Check for HDR color space (Dolby Vision uses PQ transfer)
+        if #available(iOS 11.0, *) {
+            // Check if it has HDR characteristics
+            // Dolby Vision typically has specific color primaries
+            if let videoRange = videoAttributes.videoRange,
+               videoRange != .SDR {
+                // If it's HDR but not explicitly labeled, might be Dolby Vision
+                // For safety, we'll check codec strings more thoroughly
+                return false
+            }
+        }
+        
+        return false
     }
     
     private func codecTypeToString(_ codecType: CMVideoCodecType) -> String {

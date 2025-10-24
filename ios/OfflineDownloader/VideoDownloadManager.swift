@@ -853,7 +853,6 @@ class VideoDownloadManager: NSObject {
         downloadId: String,
         selectedHeight: Int,
         selectedWidth: Int,
-        preferDolbyAtmos: Bool,
         options: NSDictionary?,
         resolver: @escaping RCTPromiseResolveBlock,
         rejecter: @escaping RCTPromiseRejectBlock
@@ -913,20 +912,6 @@ class VideoDownloadManager: NSObject {
                     
                     if #available(iOS 14.0, *) {
                         downloadOptions[AVAssetDownloadTaskMinimumRequiredPresentationSizeKey] = CGSize(width: track.width, height: track.height)
-                    }
-                    
-                    // Configure media selections for audio
-                    if preferDolbyAtmos {
-                        if let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) {
-                            for option in audioGroup.options {
-                                if self.checkForDolbyAtmos(option: option) {
-                                    let mediaSelection = AVMutableMediaSelection()
-                                    mediaSelection.select(option, in: audioGroup)
-                                    downloadOptions[AVAssetDownloadTaskMediaSelectionKey] = mediaSelection
-                                    break
-                                }
-                            }
-                        }
                     }
                     
                     // Create download task
@@ -1163,7 +1148,6 @@ class VideoDownloadManager: NSObject {
                 downloadId: downloadId,
                 selectedHeight: selectedHeight,
                 selectedWidth: selectedWidth,
-                preferDolbyAtmos: false,
                 options: nil,
                 resolver: resolver,
                 rejecter: rejecter
@@ -1460,14 +1444,14 @@ class VideoDownloadManager: NSObject {
         return .unknown
     }
     
-    private func processVideoVariantsWithSampling(
-        asset: AVURLAsset,
-        masterUrl: String,
-        allowedQualities: [Int],
-        totalDurationSec: Double,
-        streamType: StreamType,
-        headers: [String: String]?,
-        completion: @escaping ([[String: Any]], [Int: TrackIdentifier]) -> Void
+   private func processVideoVariantsWithSampling(
+    asset: AVURLAsset,
+    masterUrl: String,
+    allowedQualities: [Int],
+    totalDurationSec: Double,
+    streamType: StreamType,
+    headers: [String: String]?,
+    completion: @escaping ([[String: Any]], [Int: TrackIdentifier]) -> Void
     ) async {
         var videoTracks: [[String: Any]] = []
         var videoTrackIdentifiers: [Int: TrackIdentifier] = [:]
@@ -1477,20 +1461,28 @@ class VideoDownloadManager: NSObject {
             
             let height = Int(videoAttributes.presentationSize.height)
             let width = Int(videoAttributes.presentationSize.width)
+            
             let peakBitRate = variant.peakBitRate ?? 0
             let averageBitRate = variant.averageBitRate ?? 0
             let bitrate = Int(averageBitRate > 0 ? averageBitRate : peakBitRate)
-
-            guard bitrate > 0 else {
+            
+            guard bitrate > 0 else { continue }
+            
+            if videoQualityManager.isDolbyVisionVariant(variant) {
                 continue
             }
-            
             
             if allowedQualities.contains(height) && bitrate > 0 {
                 let expectedMinBitrate = getMinExpectedBitrate(height: height)
                 let isProbablyIFrame = bitrate < expectedMinBitrate
                 
                 if !isProbablyIFrame {
+                    // Keep track with highest bitrate per quality
+                    if let existingTrack = videoTrackIdentifiers[height],
+                    bitrate <= existingTrack.bitrate {
+                        continue // Skip if we already have a better quality track
+                    }
+                    
                     let estimatedSizeBytes = await calculateSizeWithSegmentSampling(
                         variant: variant,
                         masterUrl: masterUrl,
@@ -1515,18 +1507,26 @@ class VideoDownloadManager: NSObject {
                         "bitrate": bitrate,
                         "size": Double(estimatedSizeBytes),
                         "formattedSize": formatBytes(estimatedSizeBytes),
-                        "trackId": "\(height)_\(width)_\(bitrate)",
+                        "trackId": "\(height)x\(width)x\(bitrate)",
                         "quality": "\(height)p",
-                        "streamType": streamType.description
+                        "streamType": streamType.description,
+                        "codec": videoQualityManager.codecTypeToString(videoAttributes.codecTypes.first ?? 0)
                     ]
                     
+                    // Remove existing track for this height if present
+                    videoTracks.removeAll { track in
+                        (track["height"] as? Int) == height
+                    }
+                    
                     videoTracks.append(trackData)
+                    
                 }
             }
         }
         
         completion(videoTracks, videoTrackIdentifiers)
     }
+
     
     private func calculateSizeWithSegmentSampling(
         variant: AVAssetVariant,
@@ -1760,47 +1760,66 @@ class VideoDownloadManager: NSObject {
     
     private func processAudioTracks(asset: AVURLAsset, duration: Double) -> [[String: Any]] {
         var audioTracks: [[String: Any]] = []
+        var bestStereoPerLanguage: [String: [String: Any]] = [:]
         
         if let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) {
             for option in audioGroup.options {
-                let language = option.locale?.languageCode ?? "unknown"
-                let channelCount = getChannelCount(for: option)
-                let audioBitrate = 128000
+                if checkForDolbyAtmos(option: option) {
+                    continue
+                }
                 
+                let channelCount = getChannelCount(for: option)
+                
+                if channelCount > 2 {
+                    continue
+                }
+                
+                let language = option.locale?.languageCode ?? "unknown"
+                let audioBitrate = 128000
                 let estimatedSizeBytes = calculateAudioOnlySize(audioBitrate: audioBitrate, duration: duration)
                 
-                let isDolbyAtmos = checkForDolbyAtmos(option: option)
-                let audioType = isDolbyAtmos ? "dolby_atmos" : (channelCount > 2 ? "surround" : "stereo")
+                let audioType = channelCount == 1 ? "mono" : "stereo"
                 
                 let audioTrackData: [String: Any] = [
                     "language": language,
-                    "label": option.displayName,
+                    "label": option.displayName.isEmpty ? "Stereo \(language)" : option.displayName,
                     "channelCount": channelCount,
                     "audioType": audioType,
-                    "isDolbyAtmos": isDolbyAtmos,
+                    "bitrate": audioBitrate,
                     "size": Double(estimatedSizeBytes),
-                    "formattedSize": formatBytes(estimatedSizeBytes)
+                    "formattedSize": formatBytes(estimatedSizeBytes),
+                    "mimeType": "audio/mp4a-latm"
                 ]
                 
-                audioTracks.append(audioTrackData)
+                // Keep best stereo track per language
+                if let existing = bestStereoPerLanguage[language],
+                let existingBitrate = existing["bitrate"] as? Int,
+                audioBitrate > existingBitrate {
+                    bestStereoPerLanguage[language] = audioTrackData
+                } else if bestStereoPerLanguage[language] == nil {
+                    bestStereoPerLanguage[language] = audioTrackData
+                }
+                
             }
+            
+            audioTracks = Array(bestStereoPerLanguage.values)
         }
         
         return audioTracks
     }
-    
+
     private func getChannelCount(for option: AVMediaSelectionOption) -> Int {
         let displayName = option.displayName.lowercased()
         let extendedLanguageTag = option.extendedLanguageTag?.lowercased() ?? ""
+        let combinedText = displayName + extendedLanguageTag
         
-        let combinedText = displayName + " " + extendedLanguageTag
-        
+        // For stereo-only downloads, we cap at 2 channels
         if combinedText.contains("7.1") {
-            return 8
+            return 8 // But will be filtered out
         } else if combinedText.contains("5.1") || combinedText.contains("atmos") {
-            return 6
+            return 6 // But will be filtered out
         } else if combinedText.contains("surround") {
-            return 6
+            return 6 // But will be filtered out
         } else if combinedText.contains("stereo") || combinedText.contains("2.0") {
             return 2
         } else if combinedText.contains("mono") || combinedText.contains("1.0") {
@@ -1810,28 +1829,32 @@ class VideoDownloadManager: NSObject {
         return 2
     }
 
+
     private func checkForDolbyAtmos(option: AVMediaSelectionOption) -> Bool {
         let displayName = option.displayName.lowercased()
         let extendedLanguageTag = option.extendedLanguageTag?.lowercased() ?? ""
         
-        // Check display name for Atmos keywords
+        // Check for Dolby Atmos keywords
         let hasAtmosInName = displayName.contains("atmos") ||
                             displayName.contains("ec-3") ||
                             displayName.contains("eac3") ||
-                            displayName.contains("dolby")
+                            displayName.contains("eac-3")
         
         // Check extended language tag for codec info
         let hasAtmosInTag = extendedLanguageTag.contains("ec-3") ||
-                           extendedLanguageTag.contains("eac3") ||
-                           extendedLanguageTag.contains("atmos")
+                        extendedLanguageTag.contains("eac3") ||
+                        extendedLanguageTag.contains("atmos")
         
-        // Check if it's multichannel (Atmos is usually 5.1+ channels)
-        let isMultiChannel = displayName.contains("5.1") ||
-                            displayName.contains("7.1") ||
-                            displayName.contains("surround")
+        // Check for Dolby Digital (AC-3)
+        let hasDolbyDigital = displayName.contains("ac-3") ||
+                            displayName.contains("ac3") ||
+                            displayName.contains("dolby digital") ||
+                            extendedLanguageTag.contains("ac-3") ||
+                            extendedLanguageTag.contains("ac3")
         
-        return hasAtmosInName || hasAtmosInTag || (isMultiChannel && displayName.contains("dolby"))
+        return hasAtmosInName || hasAtmosInTag || hasDolbyDigital
     }
+
 
     private func getMinExpectedBitrate(height: Int) -> Int {
         switch height {
