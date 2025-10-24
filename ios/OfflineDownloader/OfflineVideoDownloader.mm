@@ -13,7 +13,6 @@ RCT_EXTERN_METHOD(downloadStream:(NSString *)masterUrl
                   downloadId:(NSString *)downloadId
                   selectedHeight:(NSNumber *)selectedHeight
                   selectedWidth:(NSNumber *)selectedWidth
-                  preferDolbyAtmos:(BOOL)preferDolbyAtmos
                   options:(NSDictionary *)options
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

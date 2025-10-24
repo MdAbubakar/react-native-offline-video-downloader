@@ -130,7 +130,6 @@ declare module "react-native-offline-video-downloader" {
       masterUrl: string,
       selectedHeight: number,
       selectedWidth?: number,
-      preferDolbyAtmos?: boolean,
       options?: DownloadOptions
     ) => Promise<void>;
     pauseDownload: () => Promise<void>;
@@ -159,7 +158,6 @@ declare module "react-native-offline-video-downloader" {
       downloadId: string,
       selectedHeight: number,
       selectedWidth?: number,
-      preferDolbyAtmos?: boolean,
       options?: DownloadOptions
     ): Promise<{
       downloadId: string;
