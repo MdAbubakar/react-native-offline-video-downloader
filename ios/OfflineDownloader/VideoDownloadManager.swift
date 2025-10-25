@@ -902,16 +902,18 @@ class VideoDownloadManager: NSObject {
                         rejecter("TRACK_NOT_FOUND", "Track variant not available for \(selectedHeight)p", nil)
                         return
                     }
-
                     
                     // Detect stream type
                     let streamType = self.detectStreamTypeAdvanced(asset: asset)
                     
-                    // Configure download options
+                    // Configure download options (NO AUDIO SELECTION - it causes crashes)
                     var downloadOptions: [String: Any] = [:]
                     
                     if #available(iOS 14.0, *) {
-                        downloadOptions[AVAssetDownloadTaskMinimumRequiredPresentationSizeKey] = CGSize(width: track.width, height: track.height)
+                        downloadOptions[AVAssetDownloadTaskMinimumRequiredPresentationSizeKey] = CGSize(
+                            width: track.width,
+                            height: track.height
+                        )
                     }
                     
                     // Create download task
@@ -931,6 +933,7 @@ class VideoDownloadManager: NSObject {
             }
         }
     }
+
     
     private func createDownloadTaskWithRetry(
             asset: AVURLAsset,
@@ -1834,27 +1837,38 @@ class VideoDownloadManager: NSObject {
         let displayName = option.displayName.lowercased()
         let extendedLanguageTag = option.extendedLanguageTag?.lowercased() ?? ""
         
-        // Check for Dolby Atmos keywords
-        let hasAtmosInName = displayName.contains("atmos") ||
-                            displayName.contains("ec-3") ||
-                            displayName.contains("eac3") ||
-                            displayName.contains("eac-3")
+        // Check display name for Dolby identifiers
+        let dolbyKeywords = ["ddp", "dd+", "dd +", "atmos", "ec-3", "eac3", "eac-3",
+                            "ac-3", "ac3", "dolby digital", "dolby", "joc"]
         
-        // Check extended language tag for codec info
-        let hasAtmosInTag = extendedLanguageTag.contains("ec-3") ||
-                        extendedLanguageTag.contains("eac3") ||
-                        extendedLanguageTag.contains("atmos")
+        let hasDolbyInName = dolbyKeywords.contains { displayName.contains($0) }
+        let hasDolbyInTag = dolbyKeywords.contains { extendedLanguageTag.contains($0) }
         
-        // Check for Dolby Digital (AC-3)
-        let hasDolbyDigital = displayName.contains("ac-3") ||
-                            displayName.contains("ac3") ||
-                            displayName.contains("dolby digital") ||
-                            extendedLanguageTag.contains("ac-3") ||
-                            extendedLanguageTag.contains("ac3")
+        // Check using available metadata
+        var hasDolbyInMetadata = false
+        let commonMetadata = option.commonMetadata
         
-        return hasAtmosInName || hasAtmosInTag || hasDolbyDigital
+        for item in commonMetadata {
+            if let key = item.commonKey?.rawValue.lowercased(),
+               let value = item.stringValue?.lowercased() {
+                if dolbyKeywords.contains(where: { key.contains($0) || value.contains($0) }) {
+                    hasDolbyInMetadata = true
+                    break
+                }
+            }
+        }
+        
+        let isDolby = hasDolbyInName || hasDolbyInTag || hasDolbyInMetadata
+        
+        if isDolby {
+            print("⚠️ Filtering Dolby audio: '\(option.displayName)' (lang: \(option.locale?.languageCode ?? "unknown"))")
+            print("   - Extended tag: \(extendedLanguageTag)")
+        } else {
+            print("✅ Accepting stereo audio: '\(option.displayName)' (lang: \(option.locale?.languageCode ?? "unknown"))")
+        }
+        
+        return isDolby
     }
-
 
     private func getMinExpectedBitrate(height: Int) -> Int {
         switch height {
@@ -2219,7 +2233,6 @@ extension VideoDownloadManager: AVAssetDownloadDelegate {
         
         let actualFileSize = getFileSize(at: location)
         let totalBytes = getTotalBytes(downloadId: downloadId)
-        
         
         // Register download
         offlineRegistry.registerDownload(downloadId: downloadId, localUrl: location) { [weak self] success in
